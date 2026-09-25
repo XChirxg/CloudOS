@@ -1,4 +1,4 @@
-# OSFiles (Windows Web OS)
+# OSFiles (Windows like Web OS)
 
 A lightweight, modern web-based desktop environment and remote management system for Linux. Access your Linux machine, terminal, files, and AI assistant from any browser on your phone, tablet, or PC over your local Wi-Fi or securely over Tailscale.
 
