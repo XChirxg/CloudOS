@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <radialGradient id="space" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#110d26" />
+      <stop offset="60%" stop-color="#070512" />
+      <stop offset="100%" stop-color="#020108" />
+    </radialGradient>
+    <radialGradient id="neb1" cx="35%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.6" />
+      <stop offset="40%" stop-color="#6366f1" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="neb2" cx="65%" cy="65%" r="45%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.5" />
+      <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <filter id="nblur">
+      <feGaussianBlur stdDeviation="90" />
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#space)" />
+  <circle cx="700" cy="450" r="500" fill="url(#neb1)" filter="url(#nblur)" />
+  <circle cx="1200" cy="650" r="450" fill="url(#neb2)" filter="url(#nblur)" />
+  <!-- Stars -->
+  <g fill="#ffffff" opacity="0.7">
+    <circle cx="150" cy="120" r="1.5" /><circle cx="340" cy="450" r="1" />
+    <circle cx="580" cy="200" r="2" /><circle cx="890" cy="150" r="1.2" />
+    <circle cx="1120" cy="240" r="1.8" /><circle cx="1450" cy="180" r="1" />
+    <circle cx="1780" cy="310" r="2" /><circle cx="250" cy="780" r="1.5" />
+    <circle cx="520" cy="890" r="1" /><circle cx="980" cy="820" r="2" />
+    <circle cx="1380" cy="910" r="1.5" /><circle cx="1650" cy="750" r="1.2" />
+    <circle cx="800" cy="500" r="2.5" opacity="0.9" />
+  </g>
+</svg>

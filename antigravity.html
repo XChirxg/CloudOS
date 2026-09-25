@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Antigravity AI</title>
+<style>
+:root {
+  --bg-main: #18181b;
+  --bg-sidebar: #121214;
+  --bg-sidebar-hover: #1f1f23;
+  --bg-card: #222227;
+  --bg-user-bubble: #27272a;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(217, 115, 86, 0.5);
+  --accent: #d97356;
+  --accent-hover: #e06c55;
+  --accent-purple: #a855f7;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --code-bg: #111113;
+  --success: #10b981;
+  --sidebar-w: 270px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg-main); color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* App Container */
+.app-layout {
+  display: flex; width: 100%; height: 100vh; height: 100dvh;
+  position: relative; overflow: hidden;
+}
+
+/* Sidebar Drawer */
+.sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100%;
+  background: var(--bg-sidebar); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; z-index: 50;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), margin-left 0.25s ease;
+}
+
+.sidebar.collapsed {
+  margin-left: calc(-1 * var(--sidebar-w));
+}
+
+.sidebar-header {
+  padding: 14px 14px 10px; display: flex; align-items: center; justify-content: space-between;
+}
+
+.brand-badge {
+  display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px;
+  color: #fff; letter-spacing: -0.01em; user-select: none;
+}
+.brand-icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: linear-gradient(135deg, #d97356, #a855f7);
+  display: flex; align-items: center; justify-content: center;
+}
+.brand-icon svg { width: 15px; height: 15px; fill: #fff; }
+
+.new-chat-btn {
+  margin: 4px 12px 12px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: #27272a; border: 1px solid rgba(255,255,255,0.1);
+  color: #f4f4f5; font-size: 13.5px; font-weight: 500;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  transition: all 0.15s ease; user-select: none;
+}
+.new-chat-btn:hover {
+  background: #323238; border-color: rgba(255,255,255,0.2); transform: translateY(-1px);
+}
+.new-chat-btn svg { width: 15px; height: 15px; fill: currentColor; }
+
+/* History List */
+.history-section-title {
+  padding: 8px 14px 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+}
+
+.history-list {
+  flex: 1; overflow-y: auto; padding: 4px 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+
+.history-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 10px; border-radius: 8px; font-size: 13px; color: var(--text-secondary);
+  cursor: pointer; transition: background 0.12s, color 0.12s; position: relative;
+  user-select: none; text-align: left; border: 1px solid transparent;
+}
+.history-item:hover {
+  background: var(--bg-sidebar-hover); color: var(--text-primary);
+}
+.history-item.active {
+  background: rgba(217, 115, 86, 0.12); color: #fff;
+  border-color: rgba(217, 115, 86, 0.3); font-weight: 500;
+}
+.history-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; margin-right: 6px;
+}
+.history-delete-btn {
+  opacity: 0; background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 2px 4px; border-radius: 4px; display: flex; align-items: center;
+  transition: opacity 0.15s, color 0.15s;
+}
+.history-item:hover .history-delete-btn { opacity: 0.8; }
+.history-delete-btn:hover { color: #ef4444; opacity: 1; }
+.history-delete-btn svg { width: 13px; height: 13px; fill: currentColor; }
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 12px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; font-size: 11.5px;
+  color: var(--text-muted);
+}
+.sidebar-footer-link {
+  color: var(--text-secondary); text-decoration: none; cursor: pointer;
+}
+.sidebar-footer-link:hover { color: #fff; text-decoration: underline; }
+
+/* Mobile Overlay Backdrop */
+.sidebar-backdrop {
+  position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6);
+  z-index: 45; opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.sidebar-backdrop.active { opacity: 1; pointer-events: auto; }
+
+/* Main Chat Container */
+.main-view {
+  flex: 1; display: flex; flex-direction: column; height: 100%;
+  position: relative; overflow: hidden; background: var(--bg-main);
+}
+
+/* Header */
+.top-nav {
+  height: 52px; min-height: 52px; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 14px;
+  border-bottom: 1px solid var(--border); background: var(--bg-main); z-index: 10;
+}
+.top-nav-left { display: flex; align-items: center; gap: 10px; }
+.icon-btn {
+  background: transparent; border: 1px solid transparent; color: var(--text-secondary);
+  width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s ease;
+}
+.icon-btn:hover { background: #242428; color: #fff; border-color: var(--border); }
+.icon-btn svg { width: 17px; height: 17px; fill: currentColor; }
+
+.chat-topic-title {
+  font-size: 14px; font-weight: 500; color: #f4f4f5;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;
+}
+
+.top-nav-right { display: flex; align-items: center; gap: 8px; }
+
+/* Model Badge Pill */
+.model-pill {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border-radius: 20px; font-size: 11.5px; font-weight: 500;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border);
+  color: var(--text-secondary); user-select: none;
+}
+.model-pill svg { width: 12px; height: 12px; fill: var(--accent); }
+
+/* Auto Approve Pill */
+.auto-pill {
+  display: flex; align-items: center; gap: 5px; padding: 4px 10px;
+  border-radius: 20px; font-size: 11.5px; font-weight: 500; cursor: pointer;
+  user-select: none; transition: all 0.15s; border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12); color: #34d399;
+}
+.auto-pill.off {
+  border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: var(--text-muted);
+}
+.auto-pill svg { width: 12px; height: 12px; fill: currentColor; }
+
+/* Messages Canvas */
+.messages-container {
+  flex: 1; overflow-y: auto; padding: 16px 12px 24px;
+  display: flex; flex-direction: column; gap: 20px;
+  scroll-behavior: smooth;
+}
+
+/* Center Column Measure: reduced side space, fills wide */
+.content-measure {
+  max-width: 960px; width: 100%; margin: 0 auto;
+}
+
+/* Claude Style Welcome Hero */
+.welcome-hero {
+  max-width: 760px; margin: 30px auto 20px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 0 12px;
+}
+.hero-sparkle {
+  width: 50px; height: 50px; border-radius: 14px;
+  background: linear-gradient(135deg, #d97356, #a855f7);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 24px rgba(217, 115, 86, 0.3); margin-bottom: 2px;
+}
+.hero-sparkle svg { width: 28px; height: 28px; fill: #fff; }
+.hero-headline { font-size: 24px; font-weight: 600; color: #fff; letter-spacing: -0.02em; }
+.hero-subline { font-size: 14.5px; color: var(--text-secondary); line-height: 1.55; max-width: 600px; }
+
+/* Prompt Suggestion Chips */
+.chips-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px; width: 100%; margin-top: 16px;
+}
+.chip-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px; text-align: left; cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+}
+.chip-card:hover {
+  transform: translateY(-1px); border-color: rgba(217, 115, 86, 0.4);
+  background: #2a2a30;
+}
+.chip-card-title { font-size: 13.5px; font-weight: 500; color: #f4f4f5; margin-bottom: 3px; }
+.chip-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+/* Chat Message Rows */
+.chat-row {
+  display: flex; flex-direction: column; gap: 6px; width: 100%;
+}
+
+/* User Message */
+.chat-row.user {
+  align-items: flex-end;
+}
+.user-bubble {
+  max-width: 82%; background: var(--bg-user-bubble);
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px;
+  padding: 12px 18px; font-size: 15.5px; line-height: 1.6; color: #fff;
+  word-break: break-word; white-space: pre-wrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Assistant Message */
+.chat-row.assistant {
+  align-items: flex-start;
+}
+.assistant-wrapper {
+  display: flex; gap: 12px; width: 100%; align-items: flex-start;
+}
+.assistant-avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: linear-gradient(135deg, #d97356, #a855f7);
+  display: flex; align-items: center; justify-content: center; margin-top: 3px;
+}
+.assistant-avatar svg { width: 15px; height: 15px; fill: #fff; }
+
+.assistant-body {
+  flex: 1; font-size: 15.5px; line-height: 1.65; color: #ececee;
+  word-break: break-word; overflow-x: auto;
+}
+
+/* Markdown Formatting */
+.assistant-body p { margin-bottom: 12px; }
+.assistant-body p:last-child { margin-bottom: 0; }
+.assistant-body h1, .assistant-body h2, .assistant-body h3, .assistant-body h4 {
+  color: #fff; font-weight: 600; margin: 18px 0 8px; line-height: 1.35;
+}
+.assistant-body h1 { font-size: 21px; }
+.assistant-body h2 { font-size: 18.5px; }
+.assistant-body h3 { font-size: 16.5px; }
+.assistant-body ul, .assistant-body ol { margin: 8px 0 12px 22px; }
+.assistant-body li { margin-bottom: 5px; }
+.assistant-body strong { color: #fff; font-weight: 600; }
+.assistant-body a { color: #60cdff; text-decoration: none; }
+.assistant-body a:hover { text-decoration: underline; }
+.assistant-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+.inline-code {
+  background: #25252b; border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 6px; border-radius: 5px; font-family: ui-monospace, monospace;
+  font-size: 13.5px; color: #f97316;
+}
+
+/* Code Block */
+.code-block {
+  background: var(--code-bg); border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px; margin: 12px 0; overflow: hidden;
+}
+.code-header {
+  background: #17171a; border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 6px 12px; display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--text-muted); font-family: ui-monospace, monospace;
+}
+.code-copy-btn {
+  background: transparent; border: none; color: var(--text-secondary);
+  font-size: 11.5px; cursor: pointer; padding: 3px 8px; border-radius: 4px;
+  display: flex; align-items: center; gap: 4px; transition: background 0.12s, color 0.12s;
+}
+.code-copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.code-body {
+  padding: 12px 14px; margin: 0; font-family: "Cascadia Code", Menlo, Monaco, Consolas, monospace;
+  font-size: 14px; line-height: 1.55; overflow-x: auto; color: #e4e4e7;
+}
+
+/* Tool execution pills */
+.tool-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.28);
+  color: #c084fc; border-radius: 6px; padding: 4px 9px; font-size: 12px;
+  margin: 6px 0; font-family: ui-monospace, monospace;
+}
+
+/* Typing Dots */
+.typing-dots { display: inline-flex; align-items: center; gap: 5px; padding: 6px 0; }
+.typing-dot {
+  width: 6.5px; height: 6.5px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.4s infinite ease-in-out both;
+}
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+@keyframes pulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; }
+  40% { transform: scale(1.1); opacity: 1; }
+}
+
+/* Floating Claude-Style Input Container */
+.chat-footer {
+  padding: 8px 12px 14px; background: transparent;
+  display: flex; flex-direction: column; align-items: center;
+}
+
+.input-box {
+  background: var(--bg-card); border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px; padding: 10px 14px 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-box:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 4px 24px rgba(217, 115, 86, 0.2);
+}
+
+.chat-textarea {
+  width: 100%; max-height: 160px; min-height: 48px;
+  background: transparent; border: none; outline: none;
+  color: #fff; font-family: inherit; font-size: 15.5px; line-height: 1.45;
+  resize: none;
+}
+.chat-textarea::placeholder { color: var(--text-muted); }
+
+.input-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.toolbar-left { display: flex; align-items: center; gap: 8px; }
+
+.cwd-pill {
+  display: flex; align-items: center; gap: 4px; font-size: 11.5px;
+  color: var(--text-secondary); background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); padding: 3px 8px; border-radius: 6px;
+  cursor: pointer; font-family: ui-monospace, monospace;
+}
+.cwd-pill:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+.send-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--accent); border: none; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: transform 0.1s, background 0.15s, opacity 0.15s;
+  box-shadow: 0 2px 8px rgba(217, 115, 86, 0.3);
+}
+.send-btn:hover { background: var(--accent-hover); transform: scale(1.05); }
+.send-btn:active { transform: scale(0.95); }
+.send-btn:disabled { opacity: 0.35; cursor: default; transform: none; box-shadow: none; }
+.send-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+.footer-caption {
+  font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 6px;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    transform: translateX(-100%); margin-left: 0 !important;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .user-bubble { max-width: 92%; }
+  .chat-topic-title { max-width: 180px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-layout">
+  <!-- Mobile Backdrop Overlay -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
+  <!-- Left Sidebar (Claude Style Recent Conversations) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="brand-badge">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg>
+        </div>
+        <span>Antigravity</span>
+      </div>
+      <button class="icon-btn" onclick="toggleSidebar(false)" title="Close Sidebar">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      <span>New Chat</span>
+    </button>
+
+    <div class="history-section-title">Previous Chats</div>
+    <div class="history-list" id="history-list">
+      <div style="padding:14px;font-size:12px;color:var(--text-muted);text-align:center">Loading history...</div>
+    </div>
+
+    <div class="sidebar-footer">
+      <span id="session-user-badge">genius@laptop</span>
+      <span class="sidebar-footer-link" onclick="openDesktop()">Desktop ↗</span>
+    </div>
+  </aside>
+
+  <!-- Main View -->
+  <main class="main-view">
+    <!-- Top Nav -->
+    <header class="top-nav">
+      <div class="top-nav-left">
+        <button class="icon-btn" onclick="toggleSidebar()" title="Toggle Chat History">
+          <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+        </button>
+        <div class="chat-topic-title" id="current-chat-title">New Conversation</div>
+      </div>
+
+      <div class="top-nav-right">
+        <!-- Auto Approve Pill -->
+        <div class="auto-pill" id="auto-pill" onclick="toggleAutoApprove()" title="Autonomous command & write approval">
+          <svg viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          <span id="auto-text">Accept All: ON</span>
+        </div>
+
+        <button class="icon-btn" onclick="newChat()" title="Start New Chat">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        </button>
+
+        <button class="icon-btn" onclick="openDesktop()" title="Return to Desktop">
+          <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Message Canvas -->
+    <section class="messages-container" id="messages-container">
+      <div class="content-measure" id="chat-stream">
+        <!-- Welcome Hero -->
+        <div class="welcome-hero" id="welcome-hero">
+          <div class="hero-sparkle">
+            <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg>
+          </div>
+          <h2 class="hero-headline">How can Antigravity help today?</h2>
+          <p class="hero-subline">
+            Equipped with autonomous tool execution, full filesystem access, and background shell control on your system.
+          </p>
+
+          <div class="chips-grid">
+            <div class="chip-card" onclick="useChip('Explore this project and explain what files exist in ~/Desktop and OSFiles')">
+              <div class="chip-card-title">📂 Explore Project Structure</div>
+              <div class="chip-card-desc">Inspect desktop files & explain architecture</div>
+            </div>
+            <div class="chip-card" onclick="useChip('Check current system resources, active processes, and battery status')">
+              <div class="chip-card-title">📊 System Health & Stats</div>
+              <div class="chip-card-desc">Check CPU, memory & background load</div>
+            </div>
+            <div class="chip-card" onclick="useChip('Write a Python script on the Desktop that monitors battery and wifi status')">
+              <div class="chip-card-title">🐍 Create Automation Script</div>
+              <div class="chip-card-desc">Write and save a new helper script</div>
+            </div>
+            <div class="chip-card" onclick="useChip('What slash commands, skills and capabilities do you have available?')">
+              <div class="chip-card-title">💡 List Capabilities & Skills</div>
+              <div class="chip-card-desc">Review tools, skills & slash shortcuts</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Claude-Style Floating Input -->
+    <footer class="chat-footer">
+      <div class="content-measure">
+        <div class="input-box">
+          <textarea
+            id="chat-input"
+            class="chat-textarea"
+            placeholder="Reply to Antigravity..."
+            rows="1"
+            onkeydown="handleKeyDown(event)"
+            oninput="autoResize(this)"
+          ></textarea>
+
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <div class="cwd-pill" onclick="changeCwd()" title="Click to change working directory">
+                📁 <span id="cwd-display">~/Desktop</span>
+              </div>
+              <div class="model-pill">
+                <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg>
+                <span>Claude / Gemini High</span>
+              </div>
+            </div>
+
+            <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send prompt">
+              <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="footer-caption">
+          Antigravity runs natively on your system with autonomous execution.
+        </div>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script>
+let conversationId = null;
+let isGenerating = false;
+let autoApprove = true;
+let currentCwd = '/home/genius/Desktop';
+let allConversations = [];
+
+// Parse query params (e.g. ?cwd=... or ?conv_id=...)
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('cwd')) {
+  currentCwd = urlParams.get('cwd');
+}
+if (urlParams.get('conv_id')) {
+  conversationId = urlParams.get('conv_id');
+}
+document.getElementById('cwd-display').textContent = currentCwd.replace('/home/genius', '~');
+
+// Initialize
+window.addEventListener('DOMContentLoaded', () => {
+  loadConversationsList();
+  if (conversationId) {
+    loadConversationMessages(conversationId);
+  }
+});
+
+function toggleSidebar(forceState) {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const isMobile = window.innerWidth <= 768;
+
+  if (isMobile) {
+    const willOpen = forceState !== undefined ? forceState : !sidebar.classList.contains('mobile-open');
+    if (willOpen) {
+      sidebar.classList.add('mobile-open');
+      backdrop.classList.add('active');
+    } else {
+      sidebar.classList.remove('mobile-open');
+      backdrop.classList.remove('active');
+    }
+  } else {
+    sidebar.classList.toggle('collapsed', forceState === false);
+  }
+}
+
+function toggleAutoApprove() {
+  autoApprove = !autoApprove;
+  const pill = document.getElementById('auto-pill');
+  const txt = document.getElementById('auto-text');
+  if (autoApprove) {
+    pill.classList.remove('off');
+    txt.textContent = 'Accept All: ON';
+  } else {
+    pill.classList.add('off');
+    txt.textContent = 'Accept All: OFF';
+  }
+}
+
+function changeCwd() {
+  const p = prompt('Set working directory for Antigravity:', currentCwd);
+  if (p && p.trim()) {
+    currentCwd = p.trim();
+    document.getElementById('cwd-display').textContent = currentCwd.replace('/home/genius', '~');
+  }
+}
+
+function openDesktop() {
+  if (window.opener || window.parent !== window) {
+    window.close();
+  } else {
+    location.href = '/';
+  }
+}
+
+async function loadConversationsList() {
+  const listEl = document.getElementById('history-list');
+  try {
+    const res = await fetch('/api/antigravity/conversations');
+    if (!res.ok) throw new Error('Failed to load history');
+    allConversations = await res.json();
+    renderConversationsList();
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:12px;font-size:12px;color:var(--text-muted);text-align:center">Unable to load chats</div>`;
+  }
+}
+
+function renderConversationsList() {
+  const listEl = document.getElementById('history-list');
+  listEl.innerHTML = '';
+  if (!allConversations || allConversations.length === 0) {
+    listEl.innerHTML = `<div style="padding:14px;font-size:12px;color:var(--text-muted);text-align:center">No past chats found</div>`;
+    return;
+  }
+
+  allConversations.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'history-item' + (c.id === conversationId ? ' active' : '');
+    item.id = `conv-item-${c.id}`;
+    item.title = c.title;
+
+    item.innerHTML = `
+      <div class="history-title">${escapeHtml(c.title)}</div>
+      <button class="history-delete-btn" onclick="deleteConversation(event, '${c.id}')" title="Delete chat">
+        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+    `;
+
+    item.onclick = (e) => {
+      if (e.target.closest('.history-delete-btn')) return;
+      loadConversationMessages(c.id);
+      toggleSidebar(false);
+    };
+
+    listEl.appendChild(item);
+  });
+}
+
+async function loadConversationMessages(id) {
+  conversationId = id;
+  const streamEl = document.getElementById('chat-stream');
+  document.getElementById('welcome-hero').style.display = 'none';
+
+  // Highlight in sidebar
+  document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById(`conv-item-${id}`);
+  if (activeEl) activeEl.classList.add('active');
+
+  // Clear previous rendered messages
+  streamEl.querySelectorAll('.chat-row').forEach(r => r.remove());
+
+  try {
+    const res = await fetch(`/api/antigravity/conversation/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Failed to load conversation');
+    const data = await res.json();
+
+    document.getElementById('current-chat-title').textContent = data.title || 'Conversation';
+
+    if (data.messages && data.messages.length > 0) {
+      data.messages.forEach(m => {
+        if (m.role === 'user') {
+          appendUserMessage(m.text);
+        } else {
+          appendAssistantMessage(m.text);
+        }
+      });
+      scrollToBottom();
+    } else {
+      document.getElementById('welcome-hero').style.display = 'flex';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function deleteConversation(e, id) {
+  e.stopPropagation();
+  if (!confirm('Are you sure you want to delete this chat?')) return;
+  try {
+    await fetch('/api/antigravity/conversation/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    allConversations = allConversations.filter(c => c.id !== id);
+    renderConversationsList();
+    if (conversationId === id) {
+      newChat();
+    }
+  } catch (err) {
+    alert('Failed to delete: ' + err.message);
+  }
+}
+
+function newChat() {
+  conversationId = null;
+  const streamEl = document.getElementById('chat-stream');
+  streamEl.querySelectorAll('.chat-row').forEach(r => r.remove());
+  document.getElementById('welcome-hero').style.display = 'flex';
+  document.getElementById('current-chat-title').textContent = 'New Conversation';
+  document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('chat-input').focus();
+  toggleSidebar(false);
+}
+
+function useChip(text) {
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+async function sendMessage() {
+  const inputEl = document.getElementById('chat-input');
+  const prompt = inputEl.value.trim();
+  if (!prompt || isGenerating) return;
+
+  inputEl.value = '';
+  inputEl.style.height = '48px';
+  document.getElementById('welcome-hero').style.display = 'none';
+
+  if (!conversationId) {
+    document.getElementById('current-chat-title').textContent = prompt.substring(0, 45);
+  }
+
+  // Append user bubble
+  appendUserMessage(prompt);
+
+  // Append assistant container with typing indicator
+  const aiRow = createAssistantMessageRow();
+  document.getElementById('chat-stream').appendChild(aiRow);
+  scrollToBottom();
+
+  isGenerating = true;
+  document.getElementById('send-btn').disabled = true;
+
+  const bodyEl = aiRow.querySelector('.assistant-body');
+  bodyEl.innerHTML = `
+    <div class="typing-dots">
+      <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+    </div>
+  `;
+
+  let accumulatedText = '';
+
+  try {
+    const res = await fetch('/api/antigravity/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: prompt,
+        conversation_id: conversationId,
+        cwd: currentCwd,
+        auto_approve: autoApprove
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text() || 'Stream request failed');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop();
+
+      for (const block of lines) {
+        if (!block.startsWith('data: ')) continue;
+        const jsonStr = block.substring(6).trim();
+        if (!jsonStr) continue;
+
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.type === 'init') {
+            conversationId = data.conversation_id;
+          } else if (data.type === 'delta') {
+            accumulatedText += data.delta;
+            bodyEl.innerHTML = formatMarkdown(accumulatedText);
+            scrollToBottom();
+          } else if (data.type === 'tool') {
+            const toolBadge = document.createElement('div');
+            toolBadge.className = 'tool-pill';
+            toolBadge.innerHTML = `⚡ ${escapeHtml(data.step_type || 'tool')} (auto-approved)`;
+            bodyEl.appendChild(toolBadge);
+            scrollToBottom();
+          } else if (data.type === 'done') {
+            if (data.conversation_id) conversationId = data.conversation_id;
+            if (data.response && !accumulatedText) {
+              accumulatedText = data.response;
+            }
+            bodyEl.innerHTML = formatMarkdown(accumulatedText);
+            scrollToBottom();
+            loadConversationsList();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  } catch (err) {
+    bodyEl.innerHTML = `<span style="color:#ef4444">Error: ${escapeHtml(err.message)}</span>`;
+  } finally {
+    isGenerating = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('chat-input').focus();
+  }
+}
+
+function appendUserMessage(text) {
+  const streamEl = document.getElementById('chat-stream');
+  const row = document.createElement('div');
+  row.className = 'chat-row user';
+  row.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
+  streamEl.appendChild(row);
+}
+
+function appendAssistantMessage(text) {
+  const streamEl = document.getElementById('chat-stream');
+  const row = createAssistantMessageRow();
+  row.querySelector('.assistant-body').innerHTML = formatMarkdown(text);
+  streamEl.appendChild(row);
+}
+
+function createAssistantMessageRow() {
+  const row = document.createElement('div');
+  row.className = 'chat-row assistant';
+  row.innerHTML = `
+    <div class="assistant-wrapper">
+      <div class="assistant-avatar">
+        <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"/></svg>
+      </div>
+      <div class="assistant-body"></div>
+    </div>
+  `;
+  return row;
+}
+
+function scrollToBottom() {
+  const container = document.getElementById('messages-container');
+  container.scrollTop = container.scrollHeight;
+}
+
+function formatMarkdown(text) {
+  if (!text) return '';
+
+  // Code blocks ```lang\ncode\n```
+  text = text.replace(/```([a-zA-Z0-9_\-\.]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const id = 'code-' + Math.random().toString(36).substr(2, 9);
+    return `
+      <div class="code-block">
+        <div class="code-header">
+          <span>${lang || 'code'}</span>
+          <button class="code-copy-btn" onclick="copyCode('${id}', this)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            Copy
+          </button>
+        </div>
+        <pre class="code-body" id="${id}">${escapeHtml(code)}</pre>
+      </div>
+    `;
+  });
+
+  // Inline code `code`
+  text = text.replace(/`([^`]+)`/g, '<span class="inline-code">$1</span>');
+
+  // Bold & Italic
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // Headers
+  text = text.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
+  text = text.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  text = text.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  text = text.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Lists
+  text = text.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
+
+  // Paragraph line breaks outside pre/code
+  text = text.replace(/\n\n+/g, '</p><p>');
+  text = text.replace(/\n/g, '<br>');
+
+  return `<p>${text}</p>`;
+}
+
+function copyCode(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✓ Copied!';
+    setTimeout(() => { btn.innerHTML = orig; }, 1500);
+  });
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[m]);
+}
+</script>
+</body>
+</html>

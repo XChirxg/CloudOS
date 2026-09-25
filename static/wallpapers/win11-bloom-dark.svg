@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%" fx="50%" fy="30%">
+      <stop offset="0%" stop-color="#0e172a" />
+      <stop offset="50%" stop-color="#080c16" />
+      <stop offset="100%" stop-color="#020408" />
+    </radialGradient>
+    <radialGradient id="bloom1" cx="45%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0.85" />
+      <stop offset="40%" stop-color="#1d4ed8" stop-opacity="0.5" />
+      <stop offset="80%" stop-color="#4338ca" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="bloom2" cx="55%" cy="60%" r="45%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
+      <stop offset="35%" stop-color="#2563eb" stop-opacity="0.6" />
+      <stop offset="75%" stop-color="#6366f1" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="bloom3" cx="60%" cy="35%" r="40%">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.75" />
+      <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="60" result="blur" />
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)" />
+  <g filter="url(#glow)">
+    <path d="M 600,600 C 500,300 750,150 960,250 C 1170,350 1400,200 1300,550 C 1200,900 800,950 600,600 Z" fill="url(#bloom1)" />
+    <path d="M 800,450 C 700,250 950,180 1100,320 C 1250,460 1200,750 1000,750 C 800,750 900,650 800,450 Z" fill="url(#bloom2)" />
+    <path d="M 700,700 C 600,500 800,350 1050,420 C 1300,490 1250,850 950,820 C 750,800 800,900 700,700 Z" fill="url(#bloom3)" />
+  </g>
+  <!-- Ribbons of bloom -->
+  <g opacity="0.65" style="mix-blend-mode: screen;">
+    <path d="M 720,680 C 650,400 900,250 1050,380 C 1200,510 1120,780 940,730 C 820,700 790,820 720,680 Z" fill="none" stroke="#60a5fa" stroke-width="40" filter="url(#glow)" />
+    <path d="M 850,550 C 750,380 980,280 1120,400 C 1260,520 1180,680 1020,640 Z" fill="none" stroke="#93c5fd" stroke-width="25" filter="url(#glow)" />
+  </g>
+</svg>
