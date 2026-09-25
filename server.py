@@ -12,11 +12,9 @@ Unified backend supporting:
 
 import os
 import sys
+import platform
 import json
 import asyncio
-import pty
-import fcntl
-import termios
 import struct
 import signal
 import shutil
@@ -27,6 +25,17 @@ import glob
 import subprocess
 import aiohttp
 from aiohttp import web, WSMsgType
+
+try:
+    import pty
+    import fcntl
+    import termios
+    HAVE_PTY = True
+except ImportError:
+    pty = None
+    fcntl = None
+    termios = None
+    HAVE_PTY = False
 
 # Ensure all standard web, media and document types are properly recognized
 mimetypes.add_type("image/webp", ".webp")
@@ -82,7 +91,11 @@ for name, p in _QUICK:
     if os.path.isdir(rp):
         SHARES[name] = rp
         SHARE_ORDER.append(name)
-SHARES["Computer"] = os.path.realpath("/")
+if os.name == "nt":
+    drive = os.path.splitdrive(HOME)[0] or "C:"
+    SHARES["Computer"] = os.path.realpath(drive + "\\")
+else:
+    SHARES["Computer"] = os.path.realpath("/")
 SHARE_ORDER.append("Computer")
 
 def relsafe(p):
@@ -100,7 +113,8 @@ def resolve(share, rel=""):
     root = SHARES[share]
     clean_rel = relsafe(rel)
     p = os.path.realpath(os.path.join(root, clean_rel))
-    if p != root and not p.startswith(root + os.sep):
+    root_prefix = root if root.endswith(os.sep) else root + os.sep
+    if p != root and not p.startswith(root_prefix):
         raise ValueError("Path outside share boundary")
     return p
 
@@ -144,7 +158,62 @@ async def handle_ws_terminal(request):
     ws = web.WebSocketResponse(heartbeat=25.0)
     await ws.prepare(request)
 
-    # Spawn PTY
+    if not HAVE_PTY:
+        shell_cmd = os.environ.get("COMSPEC", "cmd.exe")
+        env = os.environ.copy()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell_cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=HOME,
+                env=env,
+            )
+        except Exception as e:
+            await ws.send_str(f"\r\nFailed to start shell: {e}\r\n")
+            await ws.close()
+            return ws
+
+        async def win_stdout_to_ws():
+            try:
+                while not ws.closed and proc.returncode is None:
+                    data = await proc.stdout.read(1024)
+                    if not data:
+                        break
+                    await ws.send_bytes(data)
+            except Exception:
+                pass
+
+        pipe_task = asyncio.create_task(win_stdout_to_ws())
+        try:
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    if msg.data.startswith("{") and "resize" in msg.data:
+                        continue
+                    if proc.stdin and not proc.stdin.is_closing():
+                        proc.stdin.write(msg.data.encode("utf-8", errors="replace"))
+                        await proc.stdin.drain()
+                elif msg.type == WSMsgType.BYTES:
+                    if proc.stdin and not proc.stdin.is_closing():
+                        proc.stdin.write(msg.data)
+                        await proc.stdin.drain()
+                elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.ERROR):
+                    break
+        except Exception:
+            pass
+        finally:
+            pipe_task.cancel()
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            if not ws.closed:
+                await ws.close()
+            return ws
+
+    # Spawn PTY (Unix / Linux)
     pid, master_fd = pty.fork()
     if pid == 0:
         # Child process
@@ -479,8 +548,33 @@ async def handle_system_stats(request):
     except Exception:
         pass
 
+    if total_mem == 0 and os.name == "nt":
+        try:
+            import ctypes
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+            total_mem = stat.ullTotalPhys
+            avail_mem = stat.ullAvailPhys
+            used_mem = total_mem - avail_mem
+        except Exception:
+            pass
+
     # Disk
-    du = shutil.disk_usage("/")
+    root_path = SHARES.get("Computer", HOME)
+    du = shutil.disk_usage(root_path)
 
     # Uptime
     uptime = 0
@@ -488,7 +582,12 @@ async def handle_system_stats(request):
         with open("/proc/uptime") as f:
             uptime = float(f.read().split()[0])
     except Exception:
-        pass
+        if os.name == "nt":
+            try:
+                import ctypes
+                uptime = ctypes.windll.kernel32.GetTickCount64() / 1000.0
+            except Exception:
+                pass
 
     # Battery
     bat_info = None
@@ -503,10 +602,14 @@ async def handle_system_stats(request):
         except Exception:
             pass
 
+    hostname = platform.node()
+    kernel = platform.release()
+    arch = platform.machine()
+
     return web.json_response({
-        "hostname": os.uname().nodename,
-        "kernel": os.uname().release,
-        "arch": os.uname().machine,
+        "hostname": hostname,
+        "kernel": kernel,
+        "arch": arch,
         "uptime": uptime,
         "cpu_percent": cpu_stats["percent"],
         "memory": {
@@ -526,24 +629,42 @@ async def handle_system_stats(request):
 # System Processes
 async def handle_system_processes(request):
     try:
-        p = subprocess.run(
-            ["ps", "-eo", "pid,user,%cpu,%mem,comm", "--sort=-%cpu"],
-            capture_output=True, text=True, timeout=3
-        )
-        lines = p.stdout.strip().split("\n")
-        procs = []
-        if len(lines) > 1:
-            for l in lines[1:36]:
-                parts = l.strip().split(None, 4)
+        if os.name == "nt":
+            p = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=3
+            )
+            procs = []
+            for l in p.stdout.strip().splitlines()[:35]:
+                parts = [x.strip(' "') for x in l.split('","')]
                 if len(parts) >= 5:
                     procs.append({
-                        "pid": parts[0],
-                        "user": parts[1],
-                        "cpu": parts[2],
-                        "mem": parts[3],
-                        "name": parts[4]
+                        "pid": parts[1],
+                        "user": "User",
+                        "cpu": "0.0",
+                        "mem": parts[4],
+                        "name": parts[0]
                     })
-        return web.json_response(procs)
+            return web.json_response(procs)
+        else:
+            p = subprocess.run(
+                ["ps", "-eo", "pid,user,%cpu,%mem,comm", "--sort=-%cpu"],
+                capture_output=True, text=True, timeout=3
+            )
+            lines = p.stdout.strip().split("\n")
+            procs = []
+            if len(lines) > 1:
+                for l in lines[1:36]:
+                    parts = l.strip().split(None, 4)
+                    if len(parts) >= 5:
+                        procs.append({
+                            "pid": parts[0],
+                            "user": parts[1],
+                            "cpu": parts[2],
+                            "mem": parts[3],
+                            "name": parts[4]
+                        })
+            return web.json_response(procs)
     except Exception as e:
         return web.Response(text=str(e), status=500)
 
@@ -554,7 +675,10 @@ async def handle_process_kill(request):
         pid = int(d.get("pid", 0))
         if pid <= 1:
             return web.Response(text="Cannot kill system process", status=400)
-        os.kill(pid, signal.SIGTERM)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+        else:
+            os.kill(pid, signal.SIGTERM)
         return web.json_response({"ok": True})
     except Exception as e:
         return web.Response(text=str(e), status=500)

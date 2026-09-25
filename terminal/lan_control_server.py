@@ -9,12 +9,20 @@ import os
 import sys
 import json
 import asyncio
-import pty
-import fcntl
-import termios
 import struct
 import signal
 from aiohttp import web, WSMsgType
+
+try:
+    import pty
+    import fcntl
+    import termios
+    HAVE_PTY = True
+except ImportError:
+    pty = None
+    fcntl = None
+    termios = None
+    HAVE_PTY = False
 
 PORT = int(os.environ.get("PORT", 8001))
 HOST = "0.0.0.0"
@@ -258,6 +266,61 @@ async def handle_index(request):
 async def handle_ws(request):
     ws = web.WebSocketResponse(heartbeat=25.0)
     await ws.prepare(request)
+
+    if not HAVE_PTY:
+        shell_cmd = os.environ.get("COMSPEC", "cmd.exe")
+        env = os.environ.copy()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell_cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=HOME,
+                env=env,
+            )
+        except Exception as e:
+            await ws.send_str(f"\r\nFailed to start shell: {e}\r\n")
+            await ws.close()
+            return ws
+
+        async def win_stdout_to_ws():
+            try:
+                while not ws.closed and proc.returncode is None:
+                    data = await proc.stdout.read(1024)
+                    if not data:
+                        break
+                    await ws.send_bytes(data)
+            except Exception:
+                pass
+
+        pipe_task = asyncio.create_task(win_stdout_to_ws())
+        try:
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    if msg.data.startswith("{") and "resize" in msg.data:
+                        continue
+                    if proc.stdin and not proc.stdin.is_closing():
+                        proc.stdin.write(msg.data.encode("utf-8", errors="replace"))
+                        await proc.stdin.drain()
+                elif msg.type == WSMsgType.BYTES:
+                    if proc.stdin and not proc.stdin.is_closing():
+                        proc.stdin.write(msg.data)
+                        await proc.stdin.drain()
+                elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.ERROR):
+                    break
+        except Exception:
+            pass
+        finally:
+            pipe_task.cancel()
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            if not ws.closed:
+                await ws.close()
+            return ws
 
     pid, master_fd = pty.fork()
     if pid == 0:

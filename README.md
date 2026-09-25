@@ -47,7 +47,7 @@ A lightweight, modern web-based desktop environment and remote management system
 
 ## 📋 Prerequisites
 
-- **Operating System**: Linux (Ubuntu, Debian, Fedora, Arch, Raspberry Pi OS, etc.)
+- **Operating System**: Linux (Ubuntu, Debian, Fedora, Arch, Raspberry Pi OS, etc.) or Windows (10 / 11)
 - **Python**: Python 3.10 or higher
 - **Network**: Local Area Network (Wi-Fi/Ethernet) and/or Tailscale for remote access
 
@@ -68,13 +68,18 @@ pip install -r requirements.txt
 *(Only `aiohttp>=3.9.0` is required; all other libraries are standard library modules).*
 
 ### 3. Start the Server
-```bash
-./start.sh
-```
-By default, the server runs on port `8000`. You can specify a custom port:
-```bash
-PORT=9000 ./start.sh
-```
+- **Linux / macOS**:
+  ```bash
+  ./start.sh
+  ```
+  *(To use a custom port: `PORT=9000 ./start.sh`)*
+
+- **Windows**:
+  Double-click `start.bat` or run in Command Prompt:
+  ```cmd
+  start.bat
+  ```
+  *(To use a custom port: `set PORT=9000 && start.bat`)*
 
 ### 4. Open in Your Browser
 - **On the host machine**: `http://localhost:8000`
@@ -82,9 +87,15 @@ PORT=9000 ./start.sh
 - **Remotely via Tailscale**: `http://<YOUR_TAILSCALE_IP>:8000`
 
 ### 5. Stopping the Server
-```bash
-./stop.sh
-```
+- **Linux / macOS**:
+  ```bash
+  ./stop.sh
+  ```
+- **Windows**:
+  Double-click `stop.bat` or run:
+  ```cmd
+  stop.bat
+  ```
 
 ---
 
@@ -92,10 +103,15 @@ PORT=9000 ./start.sh
 
 To access your OSFiles desktop from anywhere in the world without port forwarding:
 
-1. Install and authenticate Tailscale on your Linux host:
-   ```bash
-   ./setup_tailscale.sh
-   ```
+1. Install and authenticate Tailscale on your host:
+   - **Linux**:
+     ```bash
+     ./setup_tailscale.sh
+     ```
+   - **Windows**:
+     ```cmd
+     setup_tailscale.bat
+     ```
 2. Get your host's Tailscale IP:
    ```bash
    tailscale ip -4
@@ -142,16 +158,32 @@ To ensure OSFiles automatically starts when your computer boots:
 
 ```
 OSFiles/
-├── server.py              # Asynchronous aiohttp backend (REST APIs, PTY, SSE, File Serving)
+├── server.py              # Asynchronous aiohttp backend (REST APIs, PTY/Shell, SSE, File Serving)
 ├── index.html             # Windows 11 Desktop shell, WindowManager, Explorer, Notepad, Task Manager
 ├── antigravity.html       # Antigravity AI coding assistant chat client
-├── start.sh               # Server startup script with port detection and detachment
-├── stop.sh                # Graceful server shutdown script
-├── setup_tailscale.sh     # Tailscale helper configuration script
+├── start.sh               # Linux/macOS server startup script
+├── start.bat              # Windows server startup script
+├── stop.sh                # Linux/macOS server shutdown script
+├── stop.bat               # Windows server shutdown script
+├── setup_tailscale.sh     # Linux Tailscale configuration script
+├── setup_tailscale.bat    # Windows Tailscale configuration script
 ├── requirements.txt       # Python dependencies
 ├── .gitignore             # Git ignore file
 ├── README.md              # Project documentation
 ├── AGENTS.md              # Architecture reference & instructions for AI coding assistants
+├── File Explorer/         # Standalone lightweight File Explorer web app
+│   ├── index.html         # Explorer frontend UI
+│   ├── lan_server.py      # Cross-platform HTTP file server
+│   ├── start_lan_server.sh
+│   ├── start_lan_server.bat
+│   ├── stop.sh
+│   └── stop.bat
+├── terminal/              # Standalone LAN terminal control server
+│   ├── lan_control_server.py
+│   ├── start_lan_control.sh
+│   ├── start_lan_control.bat
+│   ├── stop_lan_control.sh
+│   └── stop_lan_control.bat
 ├── static/
 │   ├── vendor/xterm/      # Offline xterm.js bundle for terminal emulation
 │   └── wallpapers/        # Pre-installed high-definition desktop wallpapers
