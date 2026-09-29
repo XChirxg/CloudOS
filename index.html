@@ -663,11 +663,13 @@ const ICONS = {
   folder: `<svg viewBox="0 0 24 24" fill="#ffd13b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`,
   file: `<svg viewBox="0 0 24 24" fill="#9ca3af"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
   code: `<svg viewBox="0 0 24 24" fill="#60cdff"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>`,
-  image: `<svg viewBox="0 0 24 24" fill="#38bdf8"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>`
+  image: `<svg viewBox="0 0 24 24" fill="#38bdf8"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>`,
+  pdf_editor: `<svg viewBox="0 0 48 48"><rect x="4" y="4" width="40" height="40" rx="9" fill="#1e3a8a" stroke="#3b82f6" stroke-width="2"/><rect x="11" y="10" width="26" height="28" rx="3" fill="#ffffff" fill-opacity="0.95"/><path d="M15 16h18M15 22h14M15 28h18" stroke="#1d4ed8" stroke-width="2.2" stroke-linecap="round"/><circle cx="31" cy="28" r="4.5" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/></svg>`
 };
 
 /* Application Registry */
 const APPS = [
+  { id: 'pdf_editor', name: 'Vector PDF Studio', desc: 'Vector PDF & Template Designer', icon: ICONS.pdf_editor, open: (data) => WindowManager.open('pdf_editor', data) },
   { id: 'antigravity', name: 'Antigravity AI', desc: 'Autonomous coding partner', icon: ICONS.antigravity, open: (data) => WindowManager.open('antigravity', data) },
   { id: 'terminal', name: 'Terminal', desc: 'Interactive shell with agy CLI', icon: ICONS.terminal, open: (data) => WindowManager.open('terminal', data) },
   { id: 'explorer', name: 'File Explorer', desc: 'Manage & transfer files', icon: ICONS.explorer, open: (data) => WindowManager.open('explorer', data) },
@@ -771,8 +773,8 @@ const WindowManager = {
     const winId = `win-${appId}-${this.windowCounter}`;
 
     const isMobile = window.innerWidth <= 768;
-    const defaultW = isMobile ? window.innerWidth : Math.min(840, window.innerWidth - 60);
-    const defaultH = isMobile ? window.innerHeight - 52 : Math.min(560, window.innerHeight - 100);
+    const defaultW = isMobile ? window.innerWidth : (appId === 'pdf_editor' ? Math.min(1160, window.innerWidth - 40) : Math.min(840, window.innerWidth - 60));
+    const defaultH = isMobile ? window.innerHeight - 52 : (appId === 'pdf_editor' ? Math.min(740, window.innerHeight - 80) : Math.min(560, window.innerHeight - 100));
     const offset = isMobile ? 0 : ((this.windowCounter % 8) * 25);
     const defaultX = isMobile ? 0 : Math.max(20, Math.min(80 + offset, window.innerWidth - defaultW - 20));
     const defaultY = isMobile ? 0 : Math.max(20, Math.min(50 + offset, window.innerHeight - defaultH - 60));
@@ -847,6 +849,8 @@ const WindowManager = {
       winObj.cleanup = AppTaskMgr.mount(winObj, bodyEl);
     } else if (appId === 'settings') {
       winObj.cleanup = AppSettings.mount(winObj, bodyEl);
+    } else if (appId === 'pdf_editor') {
+      winObj.cleanup = AppPdfEditor.mount(winObj, bodyEl, data);
     }
 
     this.focus(winId);
@@ -2098,6 +2102,23 @@ function handleCustomWallpaperUpload(files) {
       showToast('Upload error: ' + err.message);
     });
 }
+
+/* ================= APP: VECTOR PDF STUDIO ================= */
+const AppPdfEditor = {
+  mount(win, container, data) {
+    const iframe = document.createElement('iframe');
+    iframe.src = '/static/vector-pdf-editor/index.html';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    iframe.style.background = '#ffffff';
+    container.innerHTML = '';
+    container.appendChild(iframe);
+    return () => {
+      container.innerHTML = '';
+    };
+  }
+};
 
 function setWallpaper(url, syncServer = true) {
   LiveSpaceWallpaper.stop();
