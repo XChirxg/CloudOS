@@ -35,6 +35,17 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
   const [activeGuides, setActiveGuides] = useState<SnapGuide[]>([]);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
+  // Multi-touch tracking for pinch-to-zoom & 2-finger pan on touch tablets
+  const touchStateRef = useRef<{
+    initialDistance: number;
+    initialZoom: number;
+    initialPan: { x: number; y: number };
+    initialMidpoint: { x: number; y: number };
+  } | null>(null);
+
+  const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapRef = useRef<{ time: number; objId: string } | null>(null);
+
   // Interaction State
   const [dragState, setDragState] = useState<{
     mode: 'move' | 'resize' | 'create' | 'pan' | 'pen';
@@ -68,6 +79,23 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Prevent tablet pull-to-refresh and native gesture conflicts
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventScroll = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    container.addEventListener('touchmove', preventScroll, { passive: false });
+    return () => {
+      container.removeEventListener('touchmove', preventScroll);
     };
   }, []);
 
@@ -286,11 +314,9 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     setActiveGuides([]);
   };
 
-  // Canvas Mouse Up
-  const handleMouseUp = (e: React.MouseEvent) => {
+  // Finalize drag / creation helper
+  const finalizeDrag = (currentMm: { x: number; y: number }) => {
     if (!dragState) return;
-
-    const currentMm = screenToDocMm(e.clientX, e.clientY);
 
     if (dragState.mode === 'create') {
       const minX = Math.min(dragState.startX, currentMm.x);
@@ -392,6 +418,261 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     setActiveGuides([]);
   };
 
+  // Canvas Mouse Up
+  const handleMouseUp = (e: React.MouseEvent) => {
+    const currentMm = screenToDocMm(e.clientX, e.clientY);
+    finalizeDrag(currentMm);
+  };
+
+  // Touch Handlers for Tablets
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // 2-Finger gesture: pinch-zoom & pan
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+      const mid = {
+        x: (t0.clientX + t1.clientX) / 2,
+        y: (t0.clientY + t1.clientY) / 2,
+      };
+      touchStateRef.current = {
+        initialDistance: dist,
+        initialZoom: zoom,
+        initialPan: { ...pan },
+        initialMidpoint: mid,
+      };
+      setDragState(null);
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      touchStateRef.current = null;
+      const t = e.touches[0];
+      lastTouchPosRef.current = { x: t.clientX, y: t.clientY };
+      const clickMm = screenToDocMm(t.clientX, t.clientY);
+      setCursorMm(clickMm);
+
+      if (activeTool === 'pan') {
+        setDragState({
+          mode: 'pan',
+          startX: 0,
+          startY: 0,
+          initialObjects: [],
+        });
+        return;
+      }
+
+      if (activeTool !== 'select') {
+        if (activeTool === 'pen') {
+          setDragState({
+            mode: 'pen',
+            startX: clickMm.x,
+            startY: clickMm.y,
+            initialObjects: [],
+            penPoints: [{ x: clickMm.x, y: clickMm.y }],
+          });
+          return;
+        }
+
+        if (activeTool === 'text') {
+          recordHistorySnapshot();
+          addObject({
+            name: 'Text',
+            type: 'text',
+            x: Number(clickMm.x.toFixed(2)),
+            y: Number(clickMm.y.toFixed(2)),
+            width: 60,
+            height: 12,
+            rotation: 0,
+            opacity: 1,
+            locked: false,
+            visible: true,
+            text: 'Double tap to edit',
+            fontFamily: 'Inter',
+            fontSize: 12,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textAlign: 'left',
+            lineHeight: 1.2,
+            letterSpacing: 0,
+            fill: { type: 'solid', color: '#1e293b', opacity: 1 },
+            stroke: { type: 'none', color: '#000', width: 0, opacity: 1 },
+          });
+          setActiveTool('select');
+          return;
+        }
+
+        setDragState({
+          mode: 'create',
+          startX: clickMm.x,
+          startY: clickMm.y,
+          initialObjects: [],
+        });
+        return;
+      }
+
+      // Empty area tap deselects
+      setSelectedIds([]);
+      setActiveGuides([]);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStateRef.current) {
+      // 2-Finger Pinch Zoom & Pan
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+      const mid = {
+        x: (t0.clientX + t1.clientX) / 2,
+        y: (t0.clientY + t1.clientY) / 2,
+      };
+
+      if (touchStateRef.current.initialDistance > 10) {
+        const scale = dist / touchStateRef.current.initialDistance;
+        const newZoom = Math.min(4, Math.max(0.2, Number((touchStateRef.current.initialZoom * scale).toFixed(2))));
+        setZoom(newZoom);
+      }
+
+      const dx = mid.x - touchStateRef.current.initialMidpoint.x;
+      const dy = mid.y - touchStateRef.current.initialMidpoint.y;
+      setPan({
+        x: touchStateRef.current.initialPan.x + dx,
+        y: touchStateRef.current.initialPan.y + dy,
+      });
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const currentMm = screenToDocMm(t.clientX, t.clientY);
+      setCursorMm(currentMm);
+
+      if (!dragState) return;
+
+      if (dragState.mode === 'pan') {
+        if (lastTouchPosRef.current) {
+          const dx = t.clientX - lastTouchPosRef.current.x;
+          const dy = t.clientY - lastTouchPosRef.current.y;
+          setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+        }
+        lastTouchPosRef.current = { x: t.clientX, y: t.clientY };
+        return;
+      }
+
+      lastTouchPosRef.current = { x: t.clientX, y: t.clientY };
+
+      if (dragState.mode === 'pen') {
+        const pts = dragState.penPoints || [];
+        const newPts = [...pts, { x: currentMm.x, y: currentMm.y }];
+        setDragState({ ...dragState, penPoints: newPts });
+        return;
+      }
+
+      if (dragState.mode === 'create') {
+        setActiveGuides([]);
+        return;
+      }
+
+      if (dragState.mode === 'move') {
+        const deltaX = currentMm.x - dragState.startX;
+        const deltaY = currentMm.y - dragState.startY;
+        const primaryInit = dragState.initialObjects.find(o => selectedIds[0] === o.id);
+        if (!primaryInit) return;
+
+        const candidateBounds = {
+          x: primaryInit.x + deltaX,
+          y: primaryInit.y + deltaY,
+          width: primaryInit.width,
+          height: primaryInit.height,
+        };
+
+        const snapResult = computeSnapping(
+          candidateBounds,
+          selectedIds,
+          project.objects,
+          project.page,
+          project.grid,
+          project.snap
+        );
+
+        const actualDeltaX = snapResult.snappedX - primaryInit.x;
+        const actualDeltaY = snapResult.snappedY - primaryInit.y;
+        setActiveGuides(snapResult.guides);
+
+        const updates = dragState.initialObjects.map(initObj => ({
+          id: initObj.id,
+          changes: {
+            x: Number((initObj.x + actualDeltaX).toFixed(2)),
+            y: Number((initObj.y + actualDeltaY).toFixed(2)),
+          },
+        }));
+        updateMultipleObjects(updates, false);
+        return;
+      }
+
+      if (dragState.mode === 'resize' && dragState.handle) {
+        const handle = dragState.handle;
+        const primaryInit = dragState.initialObjects[0];
+        if (!primaryInit) return;
+
+        let newX = primaryInit.x;
+        let newY = primaryInit.y;
+        let newW = primaryInit.width;
+        let newH = primaryInit.height;
+        const mouseX = currentMm.x;
+        const mouseY = currentMm.y;
+
+        if (handle.includes('e')) newW = Math.max(1, mouseX - primaryInit.x);
+        if (handle.includes('w')) {
+          const right = primaryInit.x + primaryInit.width;
+          newX = Math.min(mouseX, right - 1);
+          newW = right - newX;
+        }
+        if (handle.includes('s')) newH = Math.max(1, mouseY - primaryInit.y);
+        if (handle.includes('n')) {
+          const bottom = primaryInit.y + primaryInit.height;
+          newY = Math.min(mouseY, bottom - 1);
+          newH = bottom - newY;
+        }
+
+        const snapResult = computeSnapping(
+          { x: newX, y: newY, width: newW, height: newH },
+          [primaryInit.id],
+          project.objects,
+          project.page,
+          project.grid,
+          project.snap
+        );
+        setActiveGuides(snapResult.guides);
+
+        updateObject(primaryInit.id, {
+          x: Number(newX.toFixed(2)),
+          y: Number(newY.toFixed(2)),
+          width: Number(newW.toFixed(2)),
+          height: Number(newH.toFixed(2)),
+        }, false);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length === 0) {
+      touchStateRef.current = null;
+      if (lastTouchPosRef.current) {
+        const currentMm = screenToDocMm(lastTouchPosRef.current.x, lastTouchPosRef.current.y);
+        finalizeDrag(currentMm);
+      } else {
+        setDragState(null);
+        setActiveGuides([]);
+      }
+      lastTouchPosRef.current = null;
+    } else if (e.touches.length === 1) {
+      touchStateRef.current = null;
+      lastTouchPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
   // Zoom on wheel (Ctrl+Wheel or pinch)
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -446,10 +727,72 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     });
   };
 
+  // Handle Object Touch Start (Tablets)
+  const handleObjectTouchStart = (e: React.TouchEvent, obj: VectorObject) => {
+    if (e.touches.length !== 1) return;
+    if (activeTool !== 'select' || isSpacePressed) return;
+    e.stopPropagation();
+
+    if (obj.locked) return;
+
+    // Check for double tap on touch tablets
+    const now = Date.now();
+    if (lastTapRef.current && lastTapRef.current.objId === obj.id && (now - lastTapRef.current.time) < 350) {
+      lastTapRef.current = null;
+      if (obj.type === 'text') {
+        const newText = prompt('Edit text content:', obj.text);
+        if (newText !== null) {
+          recordHistorySnapshot();
+          updateObject(obj.id, { text: newText });
+        }
+      }
+      return;
+    }
+    lastTapRef.current = { time: now, objId: obj.id };
+
+    const newSelected = [obj.id];
+    setSelectedIds(newSelected);
+
+    const t = e.touches[0];
+    lastTouchPosRef.current = { x: t.clientX, y: t.clientY };
+    const clickMm = screenToDocMm(t.clientX, t.clientY);
+    const initialObjects = project.objects
+      .filter(o => newSelected.includes(o.id))
+      .map(o => ({ ...o }));
+
+    setDragState({
+      mode: 'move',
+      startX: clickMm.x,
+      startY: clickMm.y,
+      initialObjects,
+    });
+  };
+
   // Handle Resize Handle MouseDown
   const handleResizeHandleDown = (e: React.MouseEvent, handle: string) => {
     e.stopPropagation();
     const clickMm = screenToDocMm(e.clientX, e.clientY);
+    const initialObjects = project.objects
+      .filter(o => selectedIds.includes(o.id))
+      .map(o => ({ ...o }));
+
+    setDragState({
+      mode: 'resize',
+      handle,
+      startX: clickMm.x,
+      startY: clickMm.y,
+      initialObjects,
+    });
+  };
+
+  // Handle Resize Handle Touch Start (Tablets)
+  const handleResizeHandleTouchStart = (e: React.TouchEvent, handle: string) => {
+    if (e.touches.length !== 1) return;
+    e.stopPropagation();
+
+    const t = e.touches[0];
+    lastTouchPosRef.current = { x: t.clientX, y: t.clientY };
+    const clickMm = screenToDocMm(t.clientX, t.clientY);
     const initialObjects = project.objects
       .filter(o => selectedIds.includes(o.id))
       .map(o => ({ ...o }));
@@ -514,11 +857,16 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           onWheel={handleWheel}
           onMouseLeave={() => {
             setCursorMm(null);
             setActiveGuides([]);
           }}
+          style={{ touchAction: 'none' }}
           className={`flex-1 h-full overflow-hidden relative ${
             isSpacePressed || activeTool === 'pan'
               ? 'cursor-grab active:cursor-grabbing'
@@ -597,6 +945,7 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
                       <g
                         key={obj.id}
                         onMouseDown={e => handleObjectMouseDown(e, obj)}
+                        onTouchStart={e => handleObjectTouchStart(e, obj)}
                         onDoubleClick={e => handleObjectDoubleClick(e, obj)}
                         className={`cursor-pointer ${obj.locked ? 'pointer-events-none' : ''}`}
                         dangerouslySetInnerHTML={{
@@ -620,41 +969,46 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
                   }}
                   className="border border-blue-500 bg-blue-500/5 select-none"
                 >
-                  {/* Resize Handles (8 directions) */}
+                  {/* Resize Handles (8 directions with 28x28px touch hit-box for tablets) */}
                   {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(handle => {
-                    let style: React.CSSProperties = {
+                    let containerStyle: React.CSSProperties = {
                       position: 'absolute',
-                      width: '8px',
-                      height: '8px',
-                      backgroundColor: '#ffffff',
-                      border: '1.5px solid #2563eb',
-                      borderRadius: '1px',
+                      width: '28px',
+                      height: '28px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       pointerEvents: 'auto',
+                      touchAction: 'none',
                     };
 
-                    if (handle.includes('n')) style.top = '-4px';
-                    if (handle.includes('s')) style.bottom = '-4px';
-                    if (handle.includes('w')) style.left = '-4px';
-                    if (handle.includes('e')) style.right = '-4px';
+                    if (handle.includes('n')) containerStyle.top = '-14px';
+                    if (handle.includes('s')) containerStyle.bottom = '-14px';
+                    if (handle.includes('w')) containerStyle.left = '-14px';
+                    if (handle.includes('e')) containerStyle.right = '-14px';
 
                     if (handle === 'n' || handle === 's') {
-                      style.left = 'calc(50% - 4px)';
-                      style.cursor = 'ns-resize';
+                      containerStyle.left = 'calc(50% - 14px)';
+                      containerStyle.cursor = 'ns-resize';
                     } else if (handle === 'w' || handle === 'e') {
-                      style.top = 'calc(50% - 4px)';
-                      style.cursor = 'ew-resize';
+                      containerStyle.top = 'calc(50% - 14px)';
+                      containerStyle.cursor = 'ew-resize';
                     } else if (handle === 'nw' || handle === 'se') {
-                      style.cursor = 'nwse-resize';
+                      containerStyle.cursor = 'nwse-resize';
                     } else if (handle === 'ne' || handle === 'sw') {
-                      style.cursor = 'nesw-resize';
+                      containerStyle.cursor = 'nesw-resize';
                     }
 
                     return (
                       <div
                         key={handle}
-                        style={style}
+                        style={containerStyle}
                         onMouseDown={e => handleResizeHandleDown(e, handle)}
-                      />
+                        onTouchStart={e => handleResizeHandleTouchStart(e, handle)}
+                        title="Drag to resize"
+                      >
+                        <div className="w-2.5 h-2.5 bg-white border-[1.5px] border-blue-600 rounded-[1px] shadow-xs pointer-events-none" />
+                      </div>
                     );
                   })}
 

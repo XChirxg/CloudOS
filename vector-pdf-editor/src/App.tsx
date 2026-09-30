@@ -11,6 +11,9 @@ import { PlaceholderModal } from './components/modals/PlaceholderModal';
 import { JsonTemplateModal } from './components/modals/JsonTemplateModal';
 import { PageSettingsModal } from './components/modals/PageSettingsModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
+import { CustomFontModal } from './components/modals/CustomFontModal';
+import { TemplatePickerModal } from './components/modals/TemplatePickerModal';
+import { VirtualTrackpad } from './components/VirtualTrackpad';
 
 const EditorLayout: React.FC = () => {
   const {
@@ -190,6 +193,11 @@ const EditorLayout: React.FC = () => {
       <JsonTemplateModal />
       <PageSettingsModal />
       <ShortcutsModal />
+      <CustomFontModal />
+      <TemplatePickerModal />
+
+      {/* Floating Precision Virtual Trackpad */}
+      <VirtualTrackpad />
     </div>
   );
 };

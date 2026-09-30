@@ -51,6 +51,8 @@ export const PAGE_PRESETS: Record<Exclude<PagePreset, 'Custom'>, PresetDimension
   A4: { width: 210, height: 297 },
   A3: { width: 297, height: 420 },
   Letter: { width: 215.9, height: 279.4 },
+  PokerCard: { width: 63.5, height: 88.9 },
+  'YaadCard5x9.5': { width: 50, height: 95 },
 };
 
 export function getPageDimensions(

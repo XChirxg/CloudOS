@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import 'svg2pdf.js';
 import JSZip from 'jszip';
-import { PageConfig, VectorObject } from '../types/document';
+import { PageConfig, VectorObject, DocumentPage } from '../types/document';
 import { generateFullSvgString } from './svgRenderer';
 
 /**
@@ -45,6 +45,43 @@ export async function exportToPdf(
     width: page.width,
     height: page.height,
   });
+
+  doc.save(fileName);
+}
+
+/**
+ * Export multi-page PDF document (e.g. Front & Back sides of Poker Card)
+ */
+export async function exportMultiPagePdf(
+  page: PageConfig,
+  pages: DocumentPage[],
+  fileName = 'document.pdf',
+  replacements?: Record<string, string>
+): Promise<void> {
+  const orientation = page.orientation === 'landscape' ? 'l' : 'p';
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format: [page.width, page.height],
+    compress: true,
+  });
+
+  for (let i = 0; i < pages.length; i++) {
+    if (i > 0) {
+      doc.addPage([page.width, page.height], orientation);
+    }
+
+    const svgString = generateFullSvgString(page, pages[i].objects, replacements);
+    const svgEl = parseSvgElement(svgString);
+
+    // @ts-expect-error svg2pdf extends jsPDF
+    await doc.svg(svgEl, {
+      x: 0,
+      y: 0,
+      width: page.width,
+      height: page.height,
+    });
+  }
 
   doc.save(fileName);
 }

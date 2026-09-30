@@ -16,10 +16,13 @@ import {
   PathObject,
   ImageObject,
   SvgObject,
-  GroupObject
+  GroupObject,
+  TrackpadTarget,
+  DocumentPage,
+  CustomFont
 } from '../types/document';
 import { getPageDimensions, convertToMm } from '../utils/units';
-import { exportToPdf, exportBatchPdf } from '../utils/pdfExport';
+import { exportToPdf, exportMultiPagePdf, exportBatchPdf } from '../utils/pdfExport';
 import { generateFullSvgString } from '../utils/svgRenderer';
 import { extractPlaceholders, generateDataJsonTemplate, generateSchemaMetadata, parseImportedJsonData } from '../utils/jsonSchema';
 
@@ -35,6 +38,21 @@ interface DocumentContextType {
   activeRecordIndex: number;
   canUndo: boolean;
   canRedo: boolean;
+  
+  // Trackpad
+  trackpadTarget: TrackpadTarget;
+  setTrackpadTarget: (target: TrackpadTarget) => void;
+  isTrackpadOpen: boolean;
+  setIsTrackpadOpen: (open: boolean) => void;
+  
+  // Multi-page & Templates
+  activePageIndex: number;
+  setActivePageIndex: (index: number) => void;
+  loadProjectDocument: (doc: ProjectDocument) => void;
+  
+  // Custom Fonts
+  customFontFamilies: string[];
+  addCustomFontFamily: (font: string) => void;
   
   // Setters & Actions
   setSelectedIds: (ids: string[]) => void;
@@ -554,6 +572,56 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Template / Data import state
   const [importedRecords, setImportedRecords] = useState<Record<string, string>[] | null>(null);
   const [activeRecordIndex, setActiveRecordIndex] = useState<number>(0);
+
+  // Trackpad state
+  const [trackpadTarget, setTrackpadTarget] = useState<TrackpadTarget>('xy');
+  const [isTrackpadOpen, setIsTrackpadOpen] = useState(false);
+
+  // Multi-page state
+  const [activePageIndex, setActivePageIndexState] = useState<number>(0);
+
+  // Custom fonts state
+  const [customFontFamilies, setCustomFontFamilies] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('vector_pdf_custom_fonts') || '[]');
+      return saved.map((f: any) => f.name);
+    } catch {
+      return [];
+    }
+  });
+
+  // Load custom fonts into DOM head on mount
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('vector_pdf_custom_fonts') || '[]');
+      for (const f of saved) {
+        if (f.type === 'upload' && f.data) {
+          const styleId = `custom-font-${f.name.toLowerCase().replace(/\s+/g, '-')}`;
+          if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `@font-face { font-family: '${f.name}'; src: url('${f.data}'); }`;
+            document.head.appendChild(style);
+          }
+        } else if (f.type === 'google' && f.url) {
+          const linkId = `google-font-${f.name.toLowerCase().replace(/\s+/g, '-')}`;
+          if (!document.getElementById(linkId)) {
+            const link = document.createElement('link');
+            link.id = linkId;
+            link.rel = 'stylesheet';
+            link.href = f.url;
+            document.head.appendChild(link);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error loading custom fonts', e);
+    }
+  }, []);
+
+  const addCustomFontFamily = useCallback((name: string) => {
+    setCustomFontFamilies(prev => (prev.includes(name) ? prev : [...prev, name]));
+  }, []);
 
   // History stack
   const pastRef = useRef<VectorObject[][]>([]);
@@ -1127,6 +1195,42 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     URL.revokeObjectURL(url);
   }, [project]);
 
+  const loadProjectDocument = useCallback((doc: ProjectDocument) => {
+    recordHistorySnapshot();
+    const pageIdx = doc.activePageIndex || 0;
+    let initialObjects = doc.objects;
+    if (doc.pages && doc.pages.length > 0) {
+      initialObjects = doc.pages[pageIdx]?.objects || doc.objects;
+    }
+    setProject({
+      ...doc,
+      activePageIndex: pageIdx,
+      objects: initialObjects,
+    });
+    setActivePageIndexState(pageIdx);
+    setSelectedIds([]);
+    setImportedRecords(null);
+  }, [recordHistorySnapshot]);
+
+  const setActivePageIndex = useCallback((newIdx: number) => {
+    setProject(prev => {
+      if (!prev.pages || newIdx < 0 || newIdx >= prev.pages.length) return prev;
+      const updatedPages = [...prev.pages];
+      updatedPages[activePageIndex] = {
+        ...updatedPages[activePageIndex],
+        objects: prev.objects,
+      };
+      return {
+        ...prev,
+        activePageIndex: newIdx,
+        pages: updatedPages,
+        objects: updatedPages[newIdx].objects || [],
+      };
+    });
+    setActivePageIndexState(newIdx);
+    setSelectedIds([]);
+  }, [activePageIndex]);
+
   const loadProjectFile = useCallback(async (file: File) => {
     const text = await file.text();
     try {
@@ -1134,14 +1238,11 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!parsed.page || !Array.isArray(parsed.objects)) {
         throw new Error('Invalid project file format: missing page or objects array.');
       }
-      recordHistorySnapshot();
-      setProject(parsed);
-      setSelectedIds([]);
-      setImportedRecords(null);
+      loadProjectDocument(parsed);
     } catch (e: any) {
       alert('Error loading project file: ' + (e?.message || e));
     }
-  }, [recordHistorySnapshot]);
+  }, [loadProjectDocument]);
 
   // Export PDF & SVG
   const exportCurrentPdf = useCallback(async () => {
@@ -1155,8 +1256,17 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       importedRecords && importedRecords.length > 1
         ? `-record-${activeRecordIndex + 1}`
         : '';
-    await exportToPdf(project.page, project.objects, `${baseName}${suffix}.pdf`, activeReplacements);
-  }, [project, importedRecords, activeRecordIndex]);
+
+    if (project.pages && project.pages.length > 1) {
+      // Sync active page objects before exporting
+      const pagesToExport = project.pages.map((p, idx) =>
+        idx === activePageIndex ? { ...p, objects: project.objects } : p
+      );
+      await exportMultiPagePdf(project.page, pagesToExport, `${baseName}${suffix}.pdf`, activeReplacements);
+    } else {
+      await exportToPdf(project.page, project.objects, `${baseName}${suffix}.pdf`, activeReplacements);
+    }
+  }, [project, importedRecords, activeRecordIndex, activePageIndex]);
 
   const exportCurrentSvg = useCallback(() => {
     const activeReplacements =
@@ -1305,6 +1415,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         groupSelected,
         ungroupSelected,
         repeatGridSelected,
+        trackpadTarget,
+        setTrackpadTarget,
+        isTrackpadOpen,
+        setIsTrackpadOpen,
+        activePageIndex,
+        setActivePageIndex,
+        loadProjectDocument,
+        customFontFamilies,
+        addCustomFontFamily,
         undo,
         redo,
         recordHistorySnapshot,

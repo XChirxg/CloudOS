@@ -16,7 +16,9 @@ import {
   ChevronDown,
   ChevronRight,
   Plus,
-  Minus
+  Minus,
+  Sliders,
+  Type
 } from 'lucide-react';
 import { useDocument } from '../context/DocumentContext';
 import { VectorObject, TextObject, RectObject, FillStyle, StrokeStyle, GradientStop } from '../types/document';
@@ -39,6 +41,11 @@ export const PropertiesPanel: React.FC = () => {
     ungroupSelected,
     repeatGridSelected,
     setActiveModal,
+    trackpadTarget,
+    setTrackpadTarget,
+    isTrackpadOpen,
+    setIsTrackpadOpen,
+    customFontFamilies,
   } = useDocument();
 
   const [repeatCols, setRepeatCols] = useState(3);
@@ -242,9 +249,27 @@ export const PropertiesPanel: React.FC = () => {
 
       {/* Transform Section: Position & Size */}
       <div className="space-y-2">
-        <div className="font-semibold text-slate-700 dark:text-zinc-300 text-[11px] uppercase tracking-wider">
-          Position & Size ({unit})
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-slate-700 dark:text-zinc-300 text-[11px] uppercase tracking-wider">
+            Position & Size ({unit})
+          </span>
+          <button
+            onClick={() => {
+              setTrackpadTarget('xy');
+              setIsTrackpadOpen(!isTrackpadOpen);
+            }}
+            className={`px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 transition-colors ${
+              isTrackpadOpen
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 font-semibold'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+            }`}
+            title="Toggle Alight Motion Precision Trackpad"
+          >
+            <Sliders className="w-3 h-3 text-blue-500" />
+            <span>Trackpad</span>
+          </button>
         </div>
+
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center gap-1 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded border border-slate-200 dark:border-zinc-700">
             <span className="text-slate-400 font-mono font-semibold">X:</span>
@@ -252,6 +277,10 @@ export const PropertiesPanel: React.FC = () => {
               type="number"
               step="0.5"
               value={formatNumberOnly(primaryObject.x, unit)}
+              onFocus={() => {
+                setTrackpadTarget('x');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleXChange(e.target.value)}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -262,6 +291,10 @@ export const PropertiesPanel: React.FC = () => {
               type="number"
               step="0.5"
               value={formatNumberOnly(primaryObject.y, unit)}
+              onFocus={() => {
+                setTrackpadTarget('y');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleYChange(e.target.value)}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -272,6 +305,10 @@ export const PropertiesPanel: React.FC = () => {
               type="number"
               step="0.5"
               value={formatNumberOnly(primaryObject.width, unit)}
+              onFocus={() => {
+                setTrackpadTarget('width');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleWChange(e.target.value)}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -282,6 +319,10 @@ export const PropertiesPanel: React.FC = () => {
               type="number"
               step="0.5"
               value={formatNumberOnly(primaryObject.height, unit)}
+              onFocus={() => {
+                setTrackpadTarget('height');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleHChange(e.target.value)}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -296,6 +337,10 @@ export const PropertiesPanel: React.FC = () => {
               type="number"
               step="1"
               value={Math.round(primaryObject.rotation || 0)}
+              onFocus={() => {
+                setTrackpadTarget('rotation');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleRotationChange(e.target.value)}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -308,6 +353,10 @@ export const PropertiesPanel: React.FC = () => {
               min="0"
               max="100"
               value={Math.round((primaryObject.opacity ?? 1) * 100)}
+              onFocus={() => {
+                setTrackpadTarget('opacity');
+                setIsTrackpadOpen(true);
+              }}
               onChange={e => handleOpacityChange(Number(e.target.value))}
               className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
             />
@@ -323,19 +372,29 @@ export const PropertiesPanel: React.FC = () => {
             <span className="font-semibold text-slate-700 dark:text-zinc-300 text-[11px] uppercase tracking-wider">
               Typography
             </span>
-            {/* Placeholder Indicator Button */}
-            {primaryObject.placeholder?.isPlaceholder ? (
-              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-mono font-bold text-[10px]">
-                {`{{${primaryObject.placeholder.name}}}`}
-              </span>
-            ) : (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setActiveModal('make-placeholder')}
-                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[11px] flex items-center gap-1 cursor-pointer"
+                onClick={() => setActiveModal('custom-fonts')}
+                className="text-slate-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 text-[10px] flex items-center gap-0.5 cursor-pointer"
+                title="Add custom font (upload or link)"
               >
-                <Sparkles className="w-3 h-3" /> Make Placeholder
+                <Plus className="w-2.5 h-2.5" />
+                <span>Custom Font</span>
               </button>
-            )}
+              {/* Placeholder Indicator Button */}
+              {primaryObject.placeholder?.isPlaceholder ? (
+                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-mono font-bold text-[10px]">
+                  {`{{${primaryObject.placeholder.name}}}`}
+                </span>
+              ) : (
+                <button
+                  onClick={() => setActiveModal('make-placeholder')}
+                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3" /> Make Placeholder
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Text Content Input */}
@@ -351,16 +410,34 @@ export const PropertiesPanel: React.FC = () => {
           <div className="grid grid-cols-3 gap-2">
             <select
               value={primaryObject.fontFamily}
-              onChange={e => updateObject(primaryObject.id, { fontFamily: e.target.value }, true)}
-              className="col-span-2 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded border border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-200 outline-none"
+              onChange={e => {
+                if (e.target.value === '__add_custom_font__') {
+                  setActiveModal('custom-fonts');
+                } else {
+                  updateObject(primaryObject.id, { fontFamily: e.target.value }, true);
+                }
+              }}
+              className="col-span-2 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded border border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-200 outline-none truncate"
             >
-              <option value="Inter">Inter</option>
-              <option value="Roboto">Roboto</option>
-              <option value="Arial">Arial</option>
-              <option value="Helvetica">Helvetica</option>
-              <option value="Georgia">Georgia</option>
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Courier New">Courier New (Mono)</option>
+              <optgroup label="Standard Fonts">
+                <option value="Inter">Inter</option>
+                <option value="Roboto">Roboto</option>
+                <option value="Arial">Arial</option>
+                <option value="Helvetica">Helvetica</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Courier New">Courier New (Mono)</option>
+              </optgroup>
+              {customFontFamilies && customFontFamilies.length > 0 && (
+                <optgroup label="Custom Fonts">
+                  {customFontFamilies.map(f => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <option value="__add_custom_font__">+ Add Custom Font...</option>
             </select>
             <div className="flex items-center gap-1 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded border border-slate-200 dark:border-zinc-700">
               <input
@@ -368,6 +445,10 @@ export const PropertiesPanel: React.FC = () => {
                 min="4"
                 max="200"
                 value={primaryObject.fontSize}
+                onFocus={() => {
+                  setTrackpadTarget('fontSize');
+                  setIsTrackpadOpen(true);
+                }}
                 onChange={e => updateObject(primaryObject.id, { fontSize: Number(e.target.value) }, true)}
                 className="w-full bg-transparent outline-none font-mono text-slate-800 dark:text-zinc-200"
               />

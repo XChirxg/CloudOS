@@ -1,6 +1,6 @@
 export type Unit = 'mm' | 'cm' | 'inch';
 
-export type PagePreset = 'A4' | 'A3' | 'Letter' | 'Custom';
+export type PagePreset = 'A4' | 'A3' | 'Letter' | 'PokerCard' | 'YaadCard5x9.5' | 'Custom';
 export type PageOrientation = 'portrait' | 'landscape';
 
 export interface GradientStop {
@@ -68,6 +68,7 @@ export interface BaseVectorObject {
   visible: boolean;
   zIndex: number;
   groupId?: string;
+  pageId?: string; // For multi-page templates
 }
 
 export interface TextObject extends BaseVectorObject {
@@ -181,6 +182,20 @@ export interface SnapGuide {
   type: 'page-edge' | 'page-center' | 'object-edge' | 'object-center' | 'grid';
 }
 
+export interface CustomFont {
+  id: string;
+  name: string;
+  type: 'upload' | 'google';
+  urlOrData: string; // Base64 data URL or Google Fonts stylesheet URL
+  format?: string; // 'woff2' | 'truetype' | 'opentype'
+}
+
+export interface DocumentPage {
+  id: string;
+  name: string; // e.g. "Front", "Back", "Page 1"
+  objects: VectorObject[];
+}
+
 export interface ProjectDocument {
   id: string;
   name: string;
@@ -192,6 +207,9 @@ export interface ProjectDocument {
   grid: GridConfig;
   snap: SnapConfig;
   objects: VectorObject[];
+  pages?: DocumentPage[];
+  activePageIndex?: number;
+  customFonts?: CustomFont[];
 }
 
 export interface JsonTemplateSchema {
@@ -205,3 +223,16 @@ export interface JsonTemplateSchema {
 }
 
 export type ToolType = 'select' | 'text' | 'rect' | 'ellipse' | 'line' | 'pen' | 'image' | 'pan';
+
+export type TrackpadTarget =
+  | 'xy'
+  | 'x'
+  | 'y'
+  | 'wh'
+  | 'width'
+  | 'height'
+  | 'rotation'
+  | 'fontSize'
+  | 'opacity'
+  | 'strokeWidth'
+  | 'rx';

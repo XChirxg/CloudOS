@@ -21,7 +21,9 @@ import {
   Sparkles,
   HelpCircle,
   FileCode,
-  LayoutGrid
+  LayoutGrid,
+  Sliders,
+  Type
 } from 'lucide-react';
 import { useDocument } from '../context/DocumentContext';
 
@@ -66,6 +68,10 @@ export const MenuBar: React.FC = () => {
     nextRecord,
     prevRecord,
     clearImportedData,
+    activePageIndex,
+    setActivePageIndex,
+    isTrackpadOpen,
+    setIsTrackpadOpen,
   } = useDocument();
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -143,12 +149,31 @@ export const MenuBar: React.FC = () => {
               </button>
               <button
                 onClick={() => {
+                  setActiveModal('template-picker');
+                  setOpenMenu(null);
+                }}
+                className="px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center justify-between text-amber-600 dark:text-amber-400 font-medium"
+              >
+                <span>New from Template...</span>
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
                   setActiveModal('page-settings');
                   setOpenMenu(null);
                 }}
                 className="px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700"
               >
                 Page Setup...
+              </button>
+              <button
+                onClick={() => {
+                  setActiveModal('custom-fonts');
+                  setOpenMenu(null);
+                }}
+                className="px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700"
+              >
+                Add Custom Font...
               </button>
               <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />
               <button
@@ -639,17 +664,47 @@ export const MenuBar: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Templates quick launcher button */}
+        <button
+          onClick={() => setActiveModal('template-picker')}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ml-1 transition-colors border border-amber-300/40 dark:border-amber-700/40"
+          title="Browse Ready-Made Vector Templates Library"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <span>Templates</span>
+        </button>
       </div>
 
-      {/* Center: Document Title Input */}
+      {/* Center: Document Title Input & Multi-Page switcher */}
       <div className="flex items-center gap-2">
         <input
           type="text"
           value={project.name}
           onChange={e => setProjectName(e.target.value)}
-          className="bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 focus:bg-white dark:focus:bg-zinc-800 px-2 py-0.5 rounded border border-transparent hover:border-slate-300 dark:hover:border-zinc-700 focus:border-blue-500 font-medium text-center text-slate-800 dark:text-zinc-200 outline-none transition-colors w-56 truncate"
+          className="bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 focus:bg-white dark:focus:bg-zinc-800 px-2 py-0.5 rounded border border-transparent hover:border-slate-300 dark:hover:border-zinc-700 focus:border-blue-500 font-medium text-center text-slate-800 dark:text-zinc-200 outline-none transition-colors w-44 truncate"
           title="Click to rename document"
         />
+
+        {/* Multi-page switcher tabs (e.g. for Two-sided Poker Card) */}
+        {project.pages && project.pages.length > 1 && (
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 p-0.5 rounded-md border border-slate-200 dark:border-zinc-700 shadow-xs">
+            {project.pages.map((p, idx) => (
+              <button
+                key={p.id || idx}
+                onClick={() => setActivePageIndex(idx)}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  activePageIndex === idx
+                    ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                }`}
+              >
+                {p.name || `Page ${idx + 1}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         <span className="text-[11px] text-slate-400 font-mono">
           [{project.page.preset} {project.page.width}×{project.page.height}mm]
         </span>
@@ -704,6 +759,19 @@ export const MenuBar: React.FC = () => {
             <Redo2 className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        {/* Trackpad Toggle Button */}
+        <button
+          onClick={() => setIsTrackpadOpen(!isTrackpadOpen)}
+          title="Toggle Alight Motion Precision Trackpad"
+          className={`p-1.5 rounded-md transition-colors ${
+            isTrackpadOpen
+              ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300'
+              : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+        </button>
 
         {/* Theme Toggle Button */}
         <button
