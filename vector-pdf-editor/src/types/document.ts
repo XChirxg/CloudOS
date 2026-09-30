@@ -69,6 +69,8 @@ export interface BaseVectorObject {
   zIndex: number;
   groupId?: string;
   pageId?: string; // For multi-page templates
+  linkGroupId?: string; // Links duplicates so editing one updates all peers
+  linkSlotId?: string;  // Role/slot within duplicate (e.g. "border", "title", "badge")
 }
 
 export interface TextObject extends BaseVectorObject {
@@ -206,10 +208,21 @@ export interface ProjectDocument {
   page: PageConfig;
   grid: GridConfig;
   snap: SnapConfig;
+  syncLinkedDuplicates?: boolean; // When true, changes to linked duplicate objects propagate
   objects: VectorObject[];
   pages?: DocumentPage[];
   activePageIndex?: number;
   customFonts?: CustomFont[];
+}
+
+export interface UserTemplate {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  thumbnailIcon?: string;
+  createdAt: string;
+  project: ProjectDocument;
 }
 
 export interface JsonTemplateSchema {

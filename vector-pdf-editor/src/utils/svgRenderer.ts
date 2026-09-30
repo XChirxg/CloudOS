@@ -10,8 +10,8 @@ export function buildSvgDefs(objects: VectorObject[]): string {
     if ('fill' in obj && obj.fill) {
       defs += getGradientDef(obj.id, 'fill', obj.fill);
     }
-    if ('stroke' in obj && obj.stroke && typeof obj.stroke === 'object') {
-      // Strokes can also have gradients if needed
+    if (obj.type === 'text') {
+      defs += `<clipPath id="clip-text-${obj.id}"><rect x="0" y="0" width="${obj.width}" height="${obj.height}" /></clipPath>`;
     }
   }
 
@@ -73,6 +73,36 @@ export function getStrokeAttribute(stroke: StrokeStyle): { stroke: string; strok
     strokeOpacity: stroke.opacity,
     strokeDasharray: stroke.dashArray || undefined,
   };
+}
+
+export function getCharWidthMm(
+  ch: string,
+  fontSizeMm: number,
+  letterSpacingMm = 0,
+  isBold = false
+): number {
+  const boldFactor = isBold ? 1.08 : 1.0;
+  let ratio = 0.54; // average proportional character width
+  if (/[ijl\.,'!\:;\|`'\s]/.test(ch)) ratio = 0.28;
+  else if (/[frtI]/.test(ch)) ratio = 0.36;
+  else if (/[abcdeghkmnopqrstuvwxyz0-9]/.test(ch)) ratio = 0.54;
+  else if (/[ABCEGHJKLNOPQRTUVXYZ]/.test(ch)) ratio = 0.68;
+  else if (/[MWD@]/.test(ch)) ratio = 0.88;
+  else if (/[mw%#&]/.test(ch)) ratio = 0.80;
+  return fontSizeMm * ratio * boldFactor + letterSpacingMm;
+}
+
+export function estimateLineWidthMm(
+  line: string,
+  fontSizeMm: number,
+  letterSpacingMm = 0,
+  isBold = false
+): number {
+  let w = 0;
+  for (let i = 0; i < line.length; i++) {
+    w += getCharWidthMm(line[i], fontSizeMm, letterSpacingMm, isBold);
+  }
+  return w;
 }
 
 /**
@@ -140,6 +170,7 @@ export function renderObjectToSvg(
       // Font size in mm for SVG: 1 pt = 25.4 / 72 mm ≈ 0.3528 mm
       const fontSizeMm = (obj.fontSize * 25.4) / 72;
       const letterSpacingMm = obj.letterSpacing || 0;
+      const isBold = obj.fontWeight === 'bold' || obj.fontWeight === '700';
 
       let textAnchor = 'start';
       let textX = 0;
@@ -151,18 +182,83 @@ export function renderObjectToSvg(
         textX = obj.width;
       }
 
-      // Handle multi-line text
-      const lines = (displayText || '').split('\n');
-      const lineHeightMm = fontSizeMm * (obj.lineHeight || 1.2);
+      // Proportional word wrapping: wrap lines so text stays strictly within obj.width
+      const rawParagraphs = (displayText || '').split('\n');
+      const wrappedLines: string[] = [];
 
-      const tspans = lines
+      for (const para of rawParagraphs) {
+        if (!para) {
+          wrappedLines.push('');
+          continue;
+        }
+        const words = para.split(' ');
+        let currentLine = '';
+
+        for (const word of words) {
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          const testWidth = estimateLineWidthMm(testLine, fontSizeMm, letterSpacingMm, isBold);
+
+          if (testWidth <= obj.width || !currentLine) {
+            if (testWidth <= obj.width) {
+              currentLine = testLine;
+            } else {
+              // Even a single word exceeds obj.width, break it by characters
+              let rem = word;
+              while (rem.length > 0) {
+                let sliceLen = 1;
+                while (
+                  sliceLen < rem.length &&
+                  estimateLineWidthMm(rem.slice(0, sliceLen + 1), fontSizeMm, letterSpacingMm, isBold) <= obj.width
+                ) {
+                  sliceLen++;
+                }
+                wrappedLines.push(rem.slice(0, sliceLen));
+                rem = rem.slice(sliceLen);
+              }
+              currentLine = '';
+            }
+          } else {
+            // Push currentLine and start fresh with word
+            wrappedLines.push(currentLine);
+            const wordWidth = estimateLineWidthMm(word, fontSizeMm, letterSpacingMm, isBold);
+            if (wordWidth <= obj.width) {
+              currentLine = word;
+            } else {
+              // Word exceeds obj.width, split character-by-character
+              let rem = word;
+              while (rem.length > 0) {
+                let sliceLen = 1;
+                while (
+                  sliceLen < rem.length &&
+                  estimateLineWidthMm(rem.slice(0, sliceLen + 1), fontSizeMm, letterSpacingMm, isBold) <= obj.width
+                ) {
+                  sliceLen++;
+                }
+                wrappedLines.push(rem.slice(0, sliceLen));
+                rem = rem.slice(sliceLen);
+              }
+              currentLine = '';
+            }
+          }
+        }
+        if (currentLine) {
+          wrappedLines.push(currentLine);
+        }
+      }
+
+      const lineHeightMm = fontSizeMm * (obj.lineHeight || 1.2);
+      // Strictly limit lines to available box height
+      const maxVisibleLines = Math.max(1, Math.floor((obj.height + 0.2) / lineHeightMm));
+      const visibleLines = wrappedLines.slice(0, maxVisibleLines);
+
+      const tspans = visibleLines
         .map((line, idx) => {
           const dy = idx === 0 ? fontSizeMm * 0.85 : lineHeightMm;
           return `<tspan x="${textX}" dy="${dy}">${escapeXml(line)}</tspan>`;
         })
         .join('');
 
-      return `<text ${transform} font-family="${obj.fontFamily || 'sans-serif'}" font-size="${fontSizeMm}" font-weight="${obj.fontWeight || 'normal'}" font-style="${obj.fontStyle || 'normal'}" text-anchor="${textAnchor}" letter-spacing="${letterSpacingMm}" fill="${fill.fill}" fill-opacity="${fill.fillOpacity}" stroke="${stroke.stroke}" stroke-width="${stroke.strokeWidth}" stroke-opacity="${stroke.strokeOpacity}" ${dash}>${tspans}</text>`;
+      return `<g ${transform}><defs><clipPath id="clip-text-${obj.id}"><rect x="0" y="0" width="${obj.width}" height="${obj.height}" /></clipPath></defs><g clip-path="url(#clip-text-${obj.id})"><text font-family="${obj.fontFamily || 'sans-serif'}" font-size="${fontSizeMm}" font-weight="${obj.fontWeight || 'normal'}" font-style="${obj.fontStyle || 'normal'}" text-anchor="${textAnchor}" letter-spacing="${letterSpacingMm}" fill="${fill.fill}" fill-opacity="${fill.fillOpacity}" stroke="${stroke.stroke}" stroke-width="${stroke.strokeWidth}" stroke-opacity="${stroke.strokeOpacity}" ${dash}>${tspans}</text></g></g>`;
     }
 
     default:

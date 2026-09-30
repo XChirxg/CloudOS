@@ -18,7 +18,8 @@ import {
   Plus,
   Minus,
   Sliders,
-  Type
+  Type,
+  Link2
 } from 'lucide-react';
 import { useDocument } from '../context/DocumentContext';
 import { VectorObject, TextObject, RectObject, FillStyle, StrokeStyle, GradientStop } from '../types/document';
@@ -40,6 +41,9 @@ export const PropertiesPanel: React.FC = () => {
     groupSelected,
     ungroupSelected,
     repeatGridSelected,
+    linkSelectedAsDuplicates,
+    unlinkSelectedDuplicates,
+    syncLinkedDuplicates,
     setActiveModal,
     trackpadTarget,
     setTrackpadTarget,
@@ -246,6 +250,68 @@ export const PropertiesPanel: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Linked Duplicate Status & Actions */}
+      {primaryObject.linkGroupId ? (
+        <div className="bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 p-2.5 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-blue-800 dark:text-blue-300 font-medium text-[11px]">
+            <Link2 className="w-3.5 h-3.5 text-blue-600" />
+            <span>Linked Duplicate</span>
+            {syncLinkedDuplicates ? (
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-950/60 px-1 py-0.2 rounded">
+                SYNCING
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400 bg-slate-200 dark:bg-zinc-800 px-1 py-0.2 rounded">
+                PAUSED
+              </span>
+            )}
+          </div>
+          <button
+            onClick={unlinkSelectedDuplicates}
+            className="text-[10px] px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:text-rose-600 hover:border-rose-300 transition-colors"
+            title="Unlink selected element from duplicates"
+          >
+            Unlink
+          </button>
+        </div>
+      ) : selectedIds.length > 1 ? (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={linkSelectedAsDuplicates}
+            className="w-full py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+            title="Link selected objects so changes to one element automatically synchronize across all peers"
+          >
+            <Link2 className="w-3.5 h-3.5 text-blue-600" />
+            <span>Link Selected as Duplicates</span>
+          </button>
+        </div>
+      ) : null}
+
+      {/* Group / Ungroup Bar */}
+      {primaryObject.groupId ? (
+        <div className="bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800/40 p-2 rounded-lg flex items-center justify-between text-[11px]">
+          <div className="flex items-center gap-1.5 text-indigo-800 dark:text-indigo-300 font-medium">
+            <Layers className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Card Group (1-Click Select)</span>
+          </div>
+          <button
+            onClick={ungroupSelected}
+            className="text-[10px] px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:text-indigo-600"
+          >
+            Ungroup
+          </button>
+        </div>
+      ) : selectedIds.length > 1 ? (
+        <button
+          onClick={groupSelected}
+          className="w-full py-1.5 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+          title="Group elements together under this card for 1-click selection"
+        >
+          <Layers className="w-3.5 h-3.5 text-indigo-500" />
+          <span>Group Selected Elements</span>
+        </button>
+      ) : null}
 
       {/* Transform Section: Position & Size */}
       <div className="space-y-2">

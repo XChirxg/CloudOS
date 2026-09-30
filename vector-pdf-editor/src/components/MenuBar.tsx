@@ -21,9 +21,11 @@ import {
   Sparkles,
   HelpCircle,
   FileCode,
-  LayoutGrid,
   Sliders,
-  Type
+  Type,
+  Link2,
+  Bookmark,
+  Code2
 } from 'lucide-react';
 import { useDocument } from '../context/DocumentContext';
 
@@ -48,6 +50,11 @@ export const MenuBar: React.FC = () => {
     distributeSelected,
     groupSelected,
     ungroupSelected,
+    linkSelectedAsDuplicates,
+    unlinkSelectedDuplicates,
+    masterCardId,
+    setMasterCardId,
+    linkToMaster,
     bringForward,
     bringToFront,
     sendBackward,
@@ -72,6 +79,8 @@ export const MenuBar: React.FC = () => {
     setActivePageIndex,
     isTrackpadOpen,
     setIsTrackpadOpen,
+    syncLinkedDuplicates,
+    toggleSyncLinkedDuplicates,
   } = useDocument();
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -451,6 +460,53 @@ export const MenuBar: React.FC = () => {
                 <span>Ungroup</span>
                 <span className="text-slate-400">Ctrl+Shift+G</span>
               </button>
+              <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />
+              <button
+                onClick={() => {
+                  linkSelectedAsDuplicates();
+                  setOpenMenu(null);
+                }}
+                disabled={selectedIds.length < 2}
+                className="px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex justify-between"
+              >
+                <span>Link Duplicates</span>
+                <span className="text-slate-400">Ctrl+L</span>
+              </button>
+              <button
+                onClick={() => {
+                  unlinkSelectedDuplicates();
+                  setOpenMenu(null);
+                }}
+                disabled={!hasSelection}
+                className="px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex justify-between"
+              >
+                <span>Unlink Duplicates</span>
+              </button>
+              <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />
+              {!masterCardId && (
+                <button
+                  onClick={() => {
+                    if (selectedIds.length === 1) setMasterCardId(selectedIds[0]);
+                    setOpenMenu(null);
+                  }}
+                  disabled={selectedIds.length !== 1}
+                  className="px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex justify-between text-amber-700 dark:text-amber-300"
+                >
+                  <span>👑 Set as Master Card</span>
+                </button>
+              )}
+              {masterCardId && (
+                <button
+                  onClick={() => {
+                    linkToMaster(selectedIds.filter(id => id !== masterCardId), masterCardId);
+                    setOpenMenu(null);
+                  }}
+                  disabled={selectedIds.filter(id => id !== masterCardId).length === 0}
+                  className="px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex justify-between text-amber-700 dark:text-amber-300 font-semibold"
+                >
+                  <span>🔗 Link Selected to Master</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -558,7 +614,52 @@ export const MenuBar: React.FC = () => {
             Template
           </button>
           {openMenu === 'template' && (
-            <div className="absolute top-8 left-0 w-60 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-md shadow-xl py-1 z-50 flex flex-col">
+            <div className="absolute top-8 left-0 w-64 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-md shadow-xl py-1 z-50 flex flex-col">
+              <button
+                onClick={() => {
+                  setActiveModal('template-picker');
+                  setOpenMenu(null);
+                }}
+                className="px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center justify-between text-amber-600 dark:text-amber-400 font-medium"
+              >
+                <div className="flex items-center gap-2">
+                  <Bookmark className="w-3.5 h-3.5" />
+                  <span>Templates Library & My Templates...</span>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveModal('llm-template');
+                  setOpenMenu(null);
+                }}
+                className="px-3 py-1.5 text-left hover:bg-purple-50 dark:hover:bg-zinc-700 flex items-center justify-between text-purple-600 dark:text-purple-400 font-medium"
+              >
+                <div className="flex items-center gap-2">
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span>AI / LLM Template Generator...</span>
+                </div>
+              </button>
+
+              <div className="h-px bg-slate-200 dark:border-zinc-700 my-1" />
+
+              <button
+                onClick={() => {
+                  toggleSyncLinkedDuplicates();
+                  setOpenMenu(null);
+                }}
+                className="px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Sync Linked Duplicates</span>
+                </div>
+                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                  {syncLinkedDuplicates ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <div className="h-px bg-slate-200 dark:border-zinc-700 my-1" />
+
               <button
                 onClick={() => {
                   setActiveModal('json-template');
@@ -668,11 +769,40 @@ export const MenuBar: React.FC = () => {
         {/* Templates quick launcher button */}
         <button
           onClick={() => setActiveModal('template-picker')}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ml-1 transition-colors border border-amber-300/40 dark:border-amber-700/40"
-          title="Browse Ready-Made Vector Templates Library"
+          className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ml-1 transition-colors border border-amber-300/40 dark:border-amber-700/40"
+          title="Browse Ready-Made Vector Templates & Saved Templates"
         >
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <Bookmark className="w-3.5 h-3.5 text-amber-500" />
           <span>Templates</span>
+        </button>
+
+        {/* AI / LLM Template Quick Launcher */}
+        <button
+          onClick={() => setActiveModal('llm-template')}
+          className="flex items-center gap-1 px-2 py-1 rounded bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-medium transition-colors border border-purple-300/40 dark:border-purple-700/40"
+          title="AI / LLM Vector Template Generator & Code Loader"
+        >
+          <Code2 className="w-3.5 h-3.5 text-purple-500" />
+          <span>AI Generator</span>
+        </button>
+
+        {/* Sync Linked Duplicates Toolbar Toggle */}
+        <button
+          onClick={toggleSyncLinkedDuplicates}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors border ${
+            syncLinkedDuplicates
+              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700'
+              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 border-slate-300 dark:border-zinc-700'
+          }`}
+          title={
+            syncLinkedDuplicates
+              ? 'Sync Linked Duplicates: ON (editing one card or duplicate updates all cards)'
+              : 'Sync Linked Duplicates: OFF'
+          }
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Sync:</span>
+          <span>{syncLinkedDuplicates ? 'ON' : 'OFF'}</span>
         </button>
       </div>
 

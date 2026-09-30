@@ -1289,12 +1289,17 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
       const cx = startX + c * (cardW + gapX);
       const cy = startY + r * (cardH + gapY);
       const numStr = String(cardNum).padStart(2, '0');
+      const cardGroupId = `yc-card-group-${cardNum}`;
+      const linkDeckId = 'yc-deck-27';
 
       // Card Outer Boundary with Cut Border
       objects.push({
         id: `yc-card-box-${cardNum}`,
         name: `Card #${numStr} Cut Border`,
         type: 'rect',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-cut-border',
         x: Number(cx.toFixed(2)),
         y: Number(cy.toFixed(2)),
         width: cardW,
@@ -1315,6 +1320,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-cat-${cardNum}`,
         name: `Card #${numStr} Category Pill`,
         type: 'rect',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-cat-pill',
         x: Number((cx + 2.5).toFixed(2)),
         y: Number((cy + 2.5).toFixed(2)),
         width: cardW - 5,
@@ -1335,6 +1343,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-cat-text-${cardNum}`,
         name: `Card #${numStr} Category Text`,
         type: 'text',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-cat-text',
         x: Number((cx + 3.5).toFixed(2)),
         y: Number((cy + 4.2).toFixed(2)),
         width: cardW - 7,
@@ -1361,6 +1372,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-title-${cardNum}`,
         name: `Card #${numStr} Title`,
         type: 'text',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-title-text',
         x: Number((cx + 3).toFixed(2)),
         y: Number((cy + 12).toFixed(2)),
         width: cardW - 6,
@@ -1393,6 +1407,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-tag-${cardNum}`,
         name: `Card #${numStr} Tagline`,
         type: 'text',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-tag-text',
         x: Number((cx + 3).toFixed(2)),
         y: Number((cy + 25).toFixed(2)),
         width: cardW - 6,
@@ -1425,6 +1442,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-body-${cardNum}`,
         name: `Card #${numStr} Summary`,
         type: 'text',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-body-text',
         x: Number((cx + 3).toFixed(2)),
         y: Number((cy + 34).toFixed(2)),
         width: cardW - 6,
@@ -1457,6 +1477,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-tipbox-${cardNum}`,
         name: `Card #${numStr} Mnemonic Box`,
         type: 'rect',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-tip-box',
         x: Number((cx + 2.5).toFixed(2)),
         y: Number((cy + 68).toFixed(2)),
         width: cardW - 5,
@@ -1476,6 +1499,9 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
         id: `yc-card-tip-${cardNum}`,
         name: `Card #${numStr} Tip Text`,
         type: 'text',
+        groupId: cardGroupId,
+        linkGroupId: linkDeckId,
+        linkSlotId: 'slot-tip-text',
         x: Number((cx + 3.5).toFixed(2)),
         y: Number((cy + 71).toFixed(2)),
         width: cardW - 7,
@@ -1517,6 +1543,7 @@ export function createYaadCardA3SheetTemplate(): ProjectDocument {
     },
     grid: { show: true, spacing: 5, snap: true },
     snap: { enabled: true, snapToGrid: true, snapToPage: true, snapToObjects: true, thresholdMm: 1.5 },
+    syncLinkedDuplicates: true,
     objects,
   };
 }

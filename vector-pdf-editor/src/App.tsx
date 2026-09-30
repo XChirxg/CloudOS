@@ -13,6 +13,7 @@ import { PageSettingsModal } from './components/modals/PageSettingsModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { CustomFontModal } from './components/modals/CustomFontModal';
 import { TemplatePickerModal } from './components/modals/TemplatePickerModal';
+import { LlmTemplateModal } from './components/modals/LlmTemplateModal';
 import { VirtualTrackpad } from './components/VirtualTrackpad';
 
 const EditorLayout: React.FC = () => {
@@ -32,6 +33,9 @@ const EditorLayout: React.FC = () => {
     project,
     updateMultipleObjects,
     recordHistorySnapshot,
+    groupSelected,
+    ungroupSelected,
+    linkSelectedAsDuplicates,
   } = useDocument();
 
   const [cursorMm, setCursorMm] = useState<{ x: number; y: number } | null>(null);
@@ -82,6 +86,24 @@ const EditorLayout: React.FC = () => {
       if (cmdOrCtrl && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicateSelected();
+        return;
+      }
+
+      if (cmdOrCtrl && !e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        groupSelected();
+        return;
+      }
+
+      if (cmdOrCtrl && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        ungroupSelected();
+        return;
+      }
+
+      if (cmdOrCtrl && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        linkSelectedAsDuplicates();
         return;
       }
 
@@ -195,6 +217,7 @@ const EditorLayout: React.FC = () => {
       <ShortcutsModal />
       <CustomFontModal />
       <TemplatePickerModal />
+      <LlmTemplateModal />
 
       {/* Floating Precision Virtual Trackpad */}
       <VirtualTrackpad />

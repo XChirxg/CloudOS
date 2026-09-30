@@ -1,4 +1,20 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import {
+  Check,
+  X,
+  Bold,
+  Italic,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Folder,
+  Link2,
+  Unlink,
+  Crown,
+  Copy,
+  Trash2,
+  Edit3,
+} from 'lucide-react';
 import { useDocument } from '../context/DocumentContext';
 import { VectorObject, SnapGuide } from '../types/document';
 import { MM_TO_PX, PX_TO_MM } from '../utils/units';
@@ -29,6 +45,15 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     importedRecords,
     activeRecordIndex,
     theme,
+    groupSelected,
+    ungroupSelected,
+    linkSelectedAsDuplicates,
+    unlinkSelectedDuplicates,
+    masterCardId,
+    setMasterCardId,
+    linkToMaster,
+    deleteSelected,
+    duplicateSelected,
   } = useDocument();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -55,6 +80,44 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     initialObjects: VectorObject[];
     penPoints?: { x: number; y: number }[];
   } | null>(null);
+
+  // Custom Inline Text Editor State (replaces browser prompt alert)
+  const [editingText, setEditingText] = useState<{ id: string; text: string } | null>(null);
+  const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Marquee Drag Selection State
+  const [marquee, setMarquee] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    additive: boolean;
+  } | null>(null);
+
+  // Canvas Right-Click Context Menu State
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Dismiss context menu on window click
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null);
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  const finishEditingText = (save: boolean) => {
+    if (!editingText) return;
+    if (save) {
+      const cur = project.objects.find(o => o.id === editingText.id);
+      if (cur && cur.type === 'text' && cur.text !== editingText.text) {
+        recordHistorySnapshot();
+        updateObject(editingText.id, { text: editingText.text }, false);
+      }
+    }
+    setEditingText(null);
+  };
 
   // Active replacement dictionary from imported JSON
   const activeReplacements =
@@ -119,6 +182,10 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
   const handleMouseMove = (e: React.MouseEvent) => {
     const currentMm = screenToDocMm(e.clientX, e.clientY);
     setCursorMm(currentMm);
+
+    if (marquee) {
+      setMarquee(prev => (prev ? { ...prev, currentX: currentMm.x, currentY: currentMm.y } : null));
+    }
 
     if (!dragState) return;
 
@@ -309,9 +376,19 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
       return;
     }
 
-    // In Select Mode: clicked empty canvas -> deselect
-    setSelectedIds([]);
+    // In Select Mode: clicked empty canvas -> start marquee drag selection
+    if (!e.shiftKey) {
+      setSelectedIds([]);
+    }
     setActiveGuides([]);
+    setContextMenu(null);
+    setMarquee({
+      startX: clickMm.x,
+      startY: clickMm.y,
+      currentX: clickMm.x,
+      currentY: clickMm.y,
+      additive: e.shiftKey,
+    });
   };
 
   // Finalize drag / creation helper
@@ -420,6 +497,42 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
 
   // Canvas Mouse Up
   const handleMouseUp = (e: React.MouseEvent) => {
+    if (marquee) {
+      const minX = Math.min(marquee.startX, marquee.currentX);
+      const maxX = Math.max(marquee.startX, marquee.currentX);
+      const minY = Math.min(marquee.startY, marquee.currentY);
+      const maxY = Math.max(marquee.startY, marquee.currentY);
+      const w = maxX - minX;
+      const h = maxY - minY;
+
+      if (w > 1 || h > 1) {
+        const hitIds: string[] = [];
+        project.objects.forEach(obj => {
+          if (!obj.visible || obj.locked) return;
+          const r = obj.x + obj.width;
+          const b = obj.y + obj.height;
+          const overlaps = !(obj.x > maxX || r < minX || obj.y > maxY || b < minY);
+          if (overlaps) {
+            if (obj.groupId) {
+              const members = project.objects.filter(o => o.groupId === obj.groupId).map(o => o.id);
+              members.forEach(m => {
+                if (!hitIds.includes(m)) hitIds.push(m);
+              });
+            } else {
+              if (!hitIds.includes(obj.id)) hitIds.push(obj.id);
+            }
+          }
+        });
+
+        if (marquee.additive) {
+          setSelectedIds(Array.from(new Set([...selectedIds, ...hitIds])));
+        } else {
+          setSelectedIds(hitIds);
+        }
+      }
+      setMarquee(null);
+    }
+
     const currentMm = screenToDocMm(e.clientX, e.clientY);
     finalizeDrag(currentMm);
   };
@@ -700,16 +813,24 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
 
     if (obj.locked) return;
 
+    // Support Grouping: clicking an object inside a group selects all group members (unless Alt is pressed)
+    let targetIds = [obj.id];
+    if (obj.groupId && !e.altKey) {
+      targetIds = project.objects.filter(o => o.groupId === obj.groupId).map(o => o.id);
+    }
+
     let newSelected = [...selectedIds];
     if (e.shiftKey) {
-      if (newSelected.includes(obj.id)) {
-        newSelected = newSelected.filter(id => id !== obj.id);
+      const anySelected = targetIds.some(id => newSelected.includes(id));
+      if (anySelected) {
+        newSelected = newSelected.filter(id => !targetIds.includes(id));
       } else {
-        newSelected.push(obj.id);
+        newSelected = Array.from(new Set([...newSelected, ...targetIds]));
       }
     } else {
-      if (!newSelected.includes(obj.id)) {
-        newSelected = [obj.id];
+      const alreadyHasAll = targetIds.every(id => newSelected.includes(id));
+      if (!alreadyHasAll) {
+        newSelected = targetIds;
       }
     }
     setSelectedIds(newSelected);
@@ -740,17 +861,17 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     if (lastTapRef.current && lastTapRef.current.objId === obj.id && (now - lastTapRef.current.time) < 350) {
       lastTapRef.current = null;
       if (obj.type === 'text') {
-        const newText = prompt('Edit text content:', obj.text);
-        if (newText !== null) {
-          recordHistorySnapshot();
-          updateObject(obj.id, { text: newText });
-        }
+        setEditingText({ id: obj.id, text: obj.text });
       }
       return;
     }
     lastTapRef.current = { time: now, objId: obj.id };
 
-    const newSelected = [obj.id];
+    // Support Grouping on Tablets: touch selects all group members
+    let newSelected = [obj.id];
+    if (obj.groupId) {
+      newSelected = project.objects.filter(o => o.groupId === obj.groupId).map(o => o.id);
+    }
     setSelectedIds(newSelected);
 
     const t = e.touches[0];
@@ -817,17 +938,44 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
     selectionBox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
-  // Double click text to edit
+  // Double click text to edit (opens custom in-place text editor)
   const handleObjectDoubleClick = (e: React.MouseEvent, obj: VectorObject) => {
     e.stopPropagation();
     if (obj.type === 'text') {
-      const newText = prompt('Edit text content:', obj.text);
-      if (newText !== null) {
-        recordHistorySnapshot();
-        updateObject(obj.id, { text: newText });
-      }
+      setEditingText({ id: obj.id, text: obj.text });
     }
   };
+
+  const handleObjectContextMenu = (e: React.MouseEvent, obj: VectorObject) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedIds.includes(obj.id)) {
+      if (obj.groupId) {
+        const members = project.objects.filter(o => o.groupId === obj.groupId).map(o => o.id);
+        setSelectedIds(members);
+      } else {
+        setSelectedIds([obj.id]);
+      }
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleCanvasContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const isSingleTextSelected =
+    selectedIds.length === 1 &&
+    project.objects.find(o => o.id === selectedIds[0])?.type === 'text';
+
+  const anySelectedGrouped = selectedIds.some(id => {
+    return project.objects.find(o => o.id === id)?.groupId !== undefined;
+  });
+
+  const anySelectedLinked = selectedIds.some(id => {
+    return project.objects.find(o => o.id === id)?.linkGroupId !== undefined;
+  });
 
   // Compute page pixel dimensions
   const pageWidthPx = project.page.width * MM_TO_PX * zoom;
@@ -862,6 +1010,7 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
           onWheel={handleWheel}
+          onContextMenu={handleCanvasContextMenu}
           onMouseLeave={() => {
             setCursorMm(null);
             setActiveGuides([]);
@@ -941,12 +1090,15 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
                   .sort((a, b) => a.zIndex - b.zIndex)
                   .map(obj => {
                     const isSelected = selectedIds.includes(obj.id);
+                    const isBeingEdited = editingText?.id === obj.id;
                     return (
                       <g
                         key={obj.id}
                         onMouseDown={e => handleObjectMouseDown(e, obj)}
                         onTouchStart={e => handleObjectTouchStart(e, obj)}
                         onDoubleClick={e => handleObjectDoubleClick(e, obj)}
+                        onContextMenu={e => handleObjectContextMenu(e, obj)}
+                        style={{ opacity: isBeingEdited ? 0 : undefined }}
                         className={`cursor-pointer ${obj.locked ? 'pointer-events-none' : ''}`}
                         dangerouslySetInnerHTML={{
                           __html: renderObjectToSvg(obj, activeReplacements),
@@ -1034,6 +1186,149 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
                   />
                 </svg>
               )}
+
+              {/* Marquee Selection Drag Overlay */}
+              {marquee && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${Math.min(marquee.startX, marquee.currentX) * MM_TO_PX * zoom}px`,
+                    top: `${Math.min(marquee.startY, marquee.currentY) * MM_TO_PX * zoom}px`,
+                    width: `${Math.abs(marquee.currentX - marquee.startX) * MM_TO_PX * zoom}px`,
+                    height: `${Math.abs(marquee.currentY - marquee.startY) * MM_TO_PX * zoom}px`,
+                    pointerEvents: 'none',
+                    zIndex: 45,
+                  }}
+                  className="border border-blue-500 bg-blue-500/10 border-dashed"
+                />
+              )}
+
+              {/* Custom Inline Text Editor Overlay */}
+              {editingText && (() => {
+                const editingObj = project.objects.find(o => o.id === editingText.id);
+                if (!editingObj || editingObj.type !== 'text') return null;
+
+                const editorX = editingObj.x * MM_TO_PX * zoom;
+                const editorY = editingObj.y * MM_TO_PX * zoom;
+                const editorW = Math.max(140, editingObj.width * MM_TO_PX * zoom);
+                const editorH = Math.max(50, editingObj.height * MM_TO_PX * zoom);
+                const fontSizePx = Math.max(10, ((editingObj.fontSize * 25.4) / 72) * MM_TO_PX * zoom);
+
+                return (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${editorX}px`,
+                      top: `${editorY}px`,
+                      width: `${editorW}px`,
+                      minHeight: `${editorH}px`,
+                      zIndex: 60,
+                    }}
+                    className="bg-white dark:bg-zinc-800 rounded shadow-2xl border-2 border-blue-500 flex flex-col p-1.5"
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onTouchStart={e => e.stopPropagation()}
+                  >
+                    {/* Floating mini toolbar on top */}
+                    <div className="flex items-center justify-between gap-1 pb-1 mb-1 border-b border-slate-200 dark:border-zinc-700 text-xs">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                          <Edit3 className="w-3 h-3" /> Edit Text
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          ({editingObj.width} × {editingObj.height} mm)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => finishEditingText(true)}
+                          className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                          title="Save (Ctrl+Enter)"
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>Save</span>
+                        </button>
+                        <button
+                          onClick={() => finishEditingText(false)}
+                          className="p-1 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-700 cursor-pointer"
+                          title="Cancel (Esc)"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick formatting toolbar */}
+                    <div className="flex items-center gap-1 mb-1 pb-1 border-b border-slate-100 dark:border-zinc-700/60">
+                      <button
+                        onClick={() => updateObject(editingObj.id, { fontWeight: editingObj.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        className={`p-1 rounded cursor-pointer ${editingObj.fontWeight === 'bold' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100'}`}
+                        title="Bold"
+                      >
+                        <Bold className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => updateObject(editingObj.id, { fontStyle: editingObj.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                        className={`p-1 rounded cursor-pointer ${editingObj.fontStyle === 'italic' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100'}`}
+                        title="Italic"
+                      >
+                        <Italic className="w-3 h-3" />
+                      </button>
+                      <div className="h-3 w-px bg-slate-200 dark:bg-zinc-700 mx-0.5" />
+                      <button
+                        onClick={() => updateObject(editingObj.id, { textAlign: 'left' })}
+                        className={`p-1 rounded cursor-pointer ${editingObj.textAlign === 'left' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100'}`}
+                        title="Align Left"
+                      >
+                        <AlignLeft className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => updateObject(editingObj.id, { textAlign: 'center' })}
+                        className={`p-1 rounded cursor-pointer ${editingObj.textAlign === 'center' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100'}`}
+                        title="Align Center"
+                      >
+                        <AlignCenter className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => updateObject(editingObj.id, { textAlign: 'right' })}
+                        className={`p-1 rounded cursor-pointer ${editingObj.textAlign === 'right' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100'}`}
+                        title="Align Right"
+                      >
+                        <AlignRight className="w-3 h-3" />
+                      </button>
+                      <span className="text-[9px] text-slate-400 ml-auto font-mono">Ctrl+Enter to save</span>
+                    </div>
+
+                    {/* In-place Textarea */}
+                    <textarea
+                      ref={textEditorRef}
+                      autoFocus
+                      value={editingText.text}
+                      onChange={e => setEditingText({ ...editingText, text: e.target.value })}
+                      onKeyDown={e => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          finishEditingText(true);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          finishEditingText(false);
+                        }
+                      }}
+                      style={{
+                        fontFamily: editingObj.fontFamily || 'Inter, sans-serif',
+                        fontSize: `${fontSizePx}px`,
+                        fontWeight: editingObj.fontWeight || 'normal',
+                        fontStyle: editingObj.fontStyle || 'normal',
+                        textAlign: editingObj.textAlign || 'left',
+                        lineHeight: editingObj.lineHeight || 1.2,
+                        color: editingObj.fill?.type === 'solid' ? editingObj.fill.color : '#0f172a',
+                      }}
+                      className="w-full flex-1 p-1 bg-transparent border-0 outline-none resize-none overflow-y-auto leading-relaxed"
+                      rows={Math.max(2, editingText.text.split('\n').length)}
+                    />
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Magnetic Snapping Guide Lines */}
@@ -1070,6 +1365,159 @@ export const Canvas: React.FC<CanvasProps> = ({ cursorMm, setCursorMm }) => {
             })}
           </div>
         </div>
+
+        {/* Canvas Right-Click Context Menu */}
+        {contextMenu && (
+          <div
+            style={{
+              position: 'fixed',
+              left: `${contextMenu.x}px`,
+              top: `${contextMenu.y}px`,
+              zIndex: 100,
+            }}
+            className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg shadow-2xl py-1 w-56 text-xs select-none"
+            onClick={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
+          >
+            {/* Group */}
+            <button
+              onClick={() => {
+                groupSelected();
+                setContextMenu(null);
+              }}
+              disabled={selectedIds.length < 2}
+              className="w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex items-center justify-between text-slate-700 dark:text-zinc-200"
+            >
+              <span className="flex items-center gap-2">
+                <Folder className="w-3.5 h-3.5 text-indigo-500" /> Group Selected ({selectedIds.length})
+              </span>
+              <span className="text-[10px] text-slate-400">Ctrl+G</span>
+            </button>
+
+            {/* Ungroup */}
+            {anySelectedGrouped && (
+              <button
+                onClick={() => {
+                  ungroupSelected();
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 flex items-center justify-between text-slate-700 dark:text-zinc-200"
+              >
+                <span className="flex items-center gap-2">
+                  <Folder className="w-3.5 h-3.5 text-slate-400" /> Ungroup
+                </span>
+                <span className="text-[10px] text-slate-400">Ctrl+Shift+G</span>
+              </button>
+            )}
+
+            <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />
+
+            {/* Link Duplicates */}
+            <button
+              onClick={() => {
+                linkSelectedAsDuplicates();
+                setContextMenu(null);
+              }}
+              disabled={selectedIds.length < 2}
+              className="w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex items-center justify-between text-slate-700 dark:text-zinc-200"
+            >
+              <span className="flex items-center gap-2">
+                <Link2 className="w-3.5 h-3.5 text-blue-500" /> Link Duplicates (Sync)
+              </span>
+              <span className="text-[10px] text-slate-400">Ctrl+L</span>
+            </button>
+
+            {/* Unlink Duplicates */}
+            {anySelectedLinked && (
+              <button
+                onClick={() => {
+                  unlinkSelectedDuplicates();
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-rose-50 dark:hover:bg-zinc-700 flex items-center justify-between text-rose-600 dark:text-rose-400"
+              >
+                <span className="flex items-center gap-2">
+                  <Unlink className="w-3.5 h-3.5 text-rose-500" /> Unlink Duplicate
+                </span>
+              </button>
+            )}
+
+            {/* Master Card Linking */}
+            {selectedIds.length === 1 && !masterCardId && (
+              <button
+                onClick={() => {
+                  setMasterCardId(selectedIds[0]);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center justify-between text-amber-700 dark:text-amber-300 font-medium"
+              >
+                <span className="flex items-center gap-2">
+                  <Crown className="w-3.5 h-3.5 text-amber-500" /> Set as Master Card
+                </span>
+              </button>
+            )}
+
+            {masterCardId && selectedIds.filter(id => id !== masterCardId).length > 0 && (
+              <button
+                onClick={() => {
+                  linkToMaster(selectedIds.filter(id => id !== masterCardId), masterCardId);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center justify-between text-amber-700 dark:text-amber-300 font-medium"
+              >
+                <span className="flex items-center gap-2">
+                  <Crown className="w-3.5 h-3.5 text-amber-500" /> Link Selected to Master
+                </span>
+              </button>
+            )}
+
+            <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />
+
+            {/* Edit text if single text object selected */}
+            {isSingleTextSelected && (
+              <button
+                onClick={() => {
+                  const tObj = project.objects.find(o => o.id === selectedIds[0]);
+                  if (tObj && tObj.type === 'text') {
+                    setEditingText({ id: tObj.id, text: tObj.text });
+                  }
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-medium"
+              >
+                <Edit3 className="w-3.5 h-3.5" /> Edit Text Content...
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                duplicateSelected();
+                setContextMenu(null);
+              }}
+              disabled={selectedIds.length === 0}
+              className="w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex items-center justify-between text-slate-700 dark:text-zinc-200"
+            >
+              <span className="flex items-center gap-2">
+                <Copy className="w-3.5 h-3.5 text-slate-400" /> Duplicate
+              </span>
+              <span className="text-[10px] text-slate-400">Ctrl+D</span>
+            </button>
+
+            <button
+              onClick={() => {
+                deleteSelected();
+                setContextMenu(null);
+              }}
+              disabled={selectedIds.length === 0}
+              className="w-full px-3 py-1.5 text-left hover:bg-red-50 dark:hover:bg-zinc-700 disabled:opacity-40 flex items-center justify-between text-red-600 dark:text-red-400"
+            >
+              <span className="flex items-center gap-2">
+                <Trash2 className="w-3.5 h-3.5 text-red-500" /> Delete
+              </span>
+              <span className="text-[10px] text-slate-400">Del</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

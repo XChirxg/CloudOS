@@ -19,7 +19,8 @@ import {
   GroupObject,
   TrackpadTarget,
   DocumentPage,
-  CustomFont
+  CustomFont,
+  UserTemplate
 } from '../types/document';
 import { getPageDimensions, convertToMm } from '../utils/units';
 import { exportToPdf, exportMultiPagePdf, exportBatchPdf } from '../utils/pdfExport';
@@ -88,7 +89,26 @@ interface DocumentContextType {
   // Grouping
   groupSelected: () => void;
   ungroupSelected: () => void;
+  groupSpecifiedObjects: (ids: string[]) => void;
   
+  // Linked Duplicates & "Change one changes all"
+  syncLinkedDuplicates: boolean;
+  toggleSyncLinkedDuplicates: () => void;
+  setSyncLinkedDuplicates: (enabled: boolean) => void;
+  linkSelectedAsDuplicates: () => void;
+  unlinkSelectedDuplicates: () => void;
+  masterCardId: string | null;
+  setMasterCardId: (id: string | null) => void;
+  linkToMaster: (targetIds: string[], masterId: string) => void;
+  
+  // Custom Reusable Templates
+  savedTemplates: UserTemplate[];
+  saveCurrentAsTemplate: (name: string, category: string, description: string, thumbnailIcon?: string) => void;
+  deleteUserTemplate: (id: string) => void;
+  exportTemplateJsonFile: (template: UserTemplate) => void;
+  importTemplateJsonFile: (file: File) => Promise<UserTemplate>;
+  importTemplateJsonString: (jsonStr: string) => UserTemplate;
+
   // Repeat / Grid duplication
   repeatGridSelected: (cols: number, rows: number, gapX: number, gapY: number) => void;
   
@@ -623,6 +643,130 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCustomFontFamilies(prev => (prev.includes(name) ? prev : [...prev, name]));
   }, []);
 
+  // Saved Custom Templates state (cached in localStorage)
+  const [savedTemplates, setSavedTemplates] = useState<UserTemplate[]>(() => {
+    try {
+      const stored = localStorage.getItem('vector_pdf_saved_templates');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Automatically load bundled / folder templates if available in /templates/
+  useEffect(() => {
+    fetch('/templates/index.json')
+      .then(res => {
+        if (!res.ok) return [];
+        return res.json();
+      })
+      .then((bundled: UserTemplate[]) => {
+        if (Array.isArray(bundled) && bundled.length > 0) {
+          setSavedTemplates(prev => {
+            const existingIds = new Set(prev.map(t => t.id));
+            const newTemplates = bundled.filter(t => !existingIds.has(t.id));
+            if (newTemplates.length === 0) return prev;
+            const merged = [...newTemplates, ...prev];
+            try {
+              localStorage.setItem('vector_pdf_saved_templates', JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveCurrentAsTemplate = useCallback(
+    (name: string, category: string, description: string, thumbnailIcon?: string) => {
+      const newTpl: UserTemplate = {
+        id: 'tpl-' + Date.now(),
+        name: name.trim() || 'Custom Template',
+        category: category.trim() || 'Custom',
+        description: description.trim() || 'Custom saved template',
+        thumbnailIcon: thumbnailIcon || 'Sparkles',
+        createdAt: new Date().toISOString(),
+        project: JSON.parse(JSON.stringify(project)),
+      };
+      setSavedTemplates(prev => {
+        const updated = [newTpl, ...prev.filter(t => t.name !== newTpl.name)];
+        try {
+          localStorage.setItem('vector_pdf_saved_templates', JSON.stringify(updated));
+        } catch (e) {
+          console.error(e);
+        }
+        return updated;
+      });
+    },
+    [project]
+  );
+
+  const deleteUserTemplate = useCallback((id: string) => {
+    setSavedTemplates(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      try {
+        localStorage.setItem('vector_pdf_saved_templates', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+  }, []);
+
+  const exportTemplateJsonFile = useCallback((template: UserTemplate) => {
+    const jsonStr = JSON.stringify(template, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${template.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.template.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const importTemplateJsonString = useCallback((jsonStr: string): UserTemplate => {
+    const parsed = JSON.parse(jsonStr);
+    let tpl: UserTemplate;
+    if (parsed.project && parsed.name) {
+      tpl = {
+        ...parsed,
+        id: parsed.id || 'tpl-' + Date.now(),
+        createdAt: parsed.createdAt || new Date().toISOString(),
+      };
+    } else if (parsed.objects && parsed.page) {
+      tpl = {
+        id: 'tpl-' + Date.now(),
+        name: parsed.name || 'Imported Template',
+        category: 'Custom',
+        description: 'Template imported from JSON code',
+        createdAt: new Date().toISOString(),
+        project: parsed,
+      };
+    } else {
+      throw new Error('Invalid template JSON: must contain project document structure.');
+    }
+
+    setSavedTemplates(prev => {
+      const updated = [tpl, ...prev.filter(t => t.id !== tpl.id)];
+      try {
+        localStorage.setItem('vector_pdf_saved_templates', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+
+    return tpl;
+  }, []);
+
+  const importTemplateJsonFile = useCallback(
+    async (file: File): Promise<UserTemplate> => {
+      const text = await file.text();
+      return importTemplateJsonString(text);
+    },
+    [importTemplateJsonString]
+  );
+
   // History stack
   const pastRef = useRef<VectorObject[][]>([]);
   const futureRef = useRef<VectorObject[][]>([]);
@@ -719,17 +863,90 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [project.objects, recordHistorySnapshot]
   );
 
+  // Keys that synchronize across linked duplicates
+  const PROPAGATABLE_STYLE_KEYS = [
+    'width',
+    'height',
+    'rotation',
+    'opacity',
+    'rx',
+    'ry',
+    'fill',
+    'stroke',
+    'fontFamily',
+    'fontSize',
+    'fontWeight',
+    'fontStyle',
+    'textAlign',
+    'lineHeight',
+    'letterSpacing',
+    'd',
+    'x2',
+    'y2',
+    'arrowStart',
+    'arrowEnd',
+    'aspectRatioLocked',
+    'svgCode',
+    'viewBox',
+  ];
+
+  const getPropagatableUpdates = (updates: Partial<VectorObject>): Partial<VectorObject> => {
+    const result: any = {};
+    for (const key of PROPAGATABLE_STYLE_KEYS) {
+      if (key in updates) {
+        result[key] = (updates as any)[key];
+      }
+    }
+    return result;
+  };
+
   // Update single object
   const updateObject = useCallback(
     (id: string, updates: Partial<VectorObject>, recordHistory = false) => {
       if (recordHistory) {
         recordHistorySnapshot();
       }
-      setProject(prev => ({
-        ...prev,
-        updatedAt: new Date().toISOString(),
-        objects: prev.objects.map(obj => (obj.id === id ? ({ ...obj, ...updates } as VectorObject) : obj)),
-      }));
+      setProject(prev => {
+        const target = prev.objects.find(o => o.id === id);
+        if (!target) return prev;
+
+        const isSyncEnabled = prev.syncLinkedDuplicates !== false;
+        const propagatable = isSyncEnabled && target.linkGroupId && target.linkSlotId
+          ? getPropagatableUpdates(updates)
+          : null;
+
+        const deltaX = updates.x !== undefined ? updates.x - target.x : 0;
+        const deltaY = updates.y !== undefined ? updates.y - target.y : 0;
+        const shouldPropagateDelta = isSyncEnabled && (updates.width !== undefined || updates.height !== undefined);
+
+        const newObjects = prev.objects.map(obj => {
+          if (obj.id === id) {
+            return { ...obj, ...updates } as VectorObject;
+          }
+          if (
+            propagatable &&
+            target.linkGroupId &&
+            target.linkSlotId &&
+            obj.linkGroupId === target.linkGroupId &&
+            obj.linkSlotId === target.linkSlotId &&
+            obj.id !== id
+          ) {
+            const peerUpdates: any = { ...propagatable };
+            if (shouldPropagateDelta) {
+              if (updates.x !== undefined) peerUpdates.x = Number((obj.x + deltaX).toFixed(2));
+              if (updates.y !== undefined) peerUpdates.y = Number((obj.y + deltaY).toFixed(2));
+            }
+            return { ...obj, ...peerUpdates } as VectorObject;
+          }
+          return obj;
+        });
+
+        return {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          objects: newObjects,
+        };
+      });
     },
     [recordHistorySnapshot]
   );
@@ -740,17 +957,48 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (recordHistory) {
         recordHistorySnapshot();
       }
-      const map = new Map(updates.map(u => [u.id, u.changes]));
-      setProject(prev => ({
-        ...prev,
-        updatedAt: new Date().toISOString(),
-        objects: prev.objects.map(obj => {
-          if (map.has(obj.id)) {
-            return { ...obj, ...map.get(obj.id) } as VectorObject;
+      setProject(prev => {
+        const isSyncEnabled = prev.syncLinkedDuplicates !== false;
+        const updateMap = new Map(updates.map(u => [u.id, u.changes]));
+        const peerExtraUpdates = new Map<string, Partial<VectorObject>>();
+
+        if (isSyncEnabled) {
+          for (const u of updates) {
+            const target = prev.objects.find(o => o.id === u.id);
+            if (target && target.linkGroupId && target.linkSlotId) {
+              const propagatable = getPropagatableUpdates(u.changes);
+              if (Object.keys(propagatable).length > 0) {
+                for (const peer of prev.objects) {
+                  if (
+                    peer.linkGroupId === target.linkGroupId &&
+                    peer.linkSlotId === target.linkSlotId &&
+                    !updateMap.has(peer.id)
+                  ) {
+                    const existing = peerExtraUpdates.get(peer.id) || {};
+                    peerExtraUpdates.set(peer.id, { ...existing, ...propagatable });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        const newObjects = prev.objects.map(obj => {
+          if (updateMap.has(obj.id)) {
+            return { ...obj, ...updateMap.get(obj.id) } as VectorObject;
+          }
+          if (peerExtraUpdates.has(obj.id)) {
+            return { ...obj, ...peerExtraUpdates.get(obj.id) } as VectorObject;
           }
           return obj;
-        }),
-      }));
+        });
+
+        return {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          objects: newObjects,
+        };
+      });
     },
     [recordHistorySnapshot]
   );
@@ -775,10 +1023,32 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let maxZ = project.objects.reduce((max, o) => Math.max(max, o.zIndex), 0);
     const newIds: string[] = [];
 
-    const newObjects = toDuplicate.map(obj => {
+    const isSyncEnabled = project.syncLinkedDuplicates !== false;
+    const existingLinkGroupId = toDuplicate.find(o => o.linkGroupId)?.linkGroupId;
+    const linkGroupId = existingLinkGroupId || ('link-' + Date.now());
+
+    // Grouping setup: if source items share a groupId, create a new separate groupId for the duplicate
+    const sourceHasGroup = toDuplicate.some(o => o.groupId);
+    const newGroupId = sourceHasGroup ? ('group-' + Date.now()) : undefined;
+
+    const originalUpdates = new Map<string, { linkGroupId: string; linkSlotId: string }>();
+    if (isSyncEnabled) {
+      toDuplicate.forEach((obj, idx) => {
+        if (!obj.linkGroupId || !obj.linkSlotId) {
+          originalUpdates.set(obj.id, {
+            linkGroupId: obj.linkGroupId || linkGroupId,
+            linkSlotId: obj.linkSlotId || `slot-${idx + 1}`,
+          });
+        }
+      });
+    }
+
+    const newObjects = toDuplicate.map((obj, idx) => {
       maxZ++;
       const newId = 'obj-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
       newIds.push(newId);
+      const slotId = obj.linkSlotId || originalUpdates.get(obj.id)?.linkSlotId || `slot-${idx + 1}`;
+
       return {
         ...JSON.parse(JSON.stringify(obj)),
         id: newId,
@@ -786,16 +1056,27 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         x: obj.x + 5, // Offset slightly
         y: obj.y + 5,
         zIndex: maxZ,
+        groupId: obj.groupId ? newGroupId : undefined,
+        linkGroupId: isSyncEnabled ? linkGroupId : undefined,
+        linkSlotId: isSyncEnabled ? slotId : undefined,
       };
     });
 
-    setProject(prev => ({
-      ...prev,
-      updatedAt: new Date().toISOString(),
-      objects: [...prev.objects, ...newObjects],
-    }));
+    setProject(prev => {
+      const updatedOriginals = prev.objects.map(obj => {
+        if (originalUpdates.has(obj.id)) {
+          return { ...obj, ...originalUpdates.get(obj.id) };
+        }
+        return obj;
+      });
+      return {
+        ...prev,
+        updatedAt: new Date().toISOString(),
+        objects: [...updatedOriginals, ...newObjects],
+      };
+    });
     setSelectedIds(newIds);
-  }, [selectedIds, project.objects, recordHistorySnapshot]);
+  }, [selectedIds, project.objects, project.syncLinkedDuplicates, recordHistorySnapshot]);
 
   // Select all
   const selectAll = useCallback(() => {
@@ -1034,6 +1315,20 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const groupW = maxX - minX;
       const groupH = maxY - minY;
 
+      const isSyncEnabled = project.syncLinkedDuplicates !== false;
+      const linkGroupId = 'link-grid-' + Date.now();
+      const originGroupId = 'group-grid-' + Date.now() + '-0-0';
+
+      // Ensure original targets have slot IDs and linkGroupId
+      const originalUpdates = new Map<string, { groupId: string; linkGroupId: string; linkSlotId: string }>();
+      targets.forEach((obj, idx) => {
+        originalUpdates.set(obj.id, {
+          groupId: obj.groupId || originGroupId,
+          linkGroupId: obj.linkGroupId || linkGroupId,
+          linkSlotId: obj.linkSlotId || `slot-${idx + 1}`,
+        });
+      });
+
       let maxZ = project.objects.reduce((max, o) => Math.max(max, o.zIndex), 0);
       const generatedObjects: VectorObject[] = [];
 
@@ -1043,10 +1338,13 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
           const offsetX = c * (groupW + gapX);
           const offsetY = r * (groupH + gapY);
+          const cellGroupId = 'group-grid-' + Date.now() + `-${r}-${c}`;
 
-          for (const obj of targets) {
+          for (let idx = 0; idx < targets.length; idx++) {
+            const obj = targets[idx];
             maxZ++;
             const newId = 'obj-grid-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+            const slotId = obj.linkSlotId || originalUpdates.get(obj.id)?.linkSlotId || `slot-${idx + 1}`;
             const duplicated: VectorObject = {
               ...JSON.parse(JSON.stringify(obj)),
               id: newId,
@@ -1054,20 +1352,126 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               x: Number((obj.x + offsetX).toFixed(2)),
               y: Number((obj.y + offsetY).toFixed(2)),
               zIndex: maxZ,
+              groupId: cellGroupId,
+              linkGroupId: isSyncEnabled ? linkGroupId : undefined,
+              linkSlotId: isSyncEnabled ? slotId : undefined,
             };
             generatedObjects.push(duplicated);
           }
         }
       }
 
-      setProject(prev => ({
-        ...prev,
-        updatedAt: new Date().toISOString(),
-        objects: [...prev.objects, ...generatedObjects],
-      }));
+      setProject(prev => {
+        const updatedOriginals = prev.objects.map(obj => {
+          if (originalUpdates.has(obj.id)) {
+            return { ...obj, ...originalUpdates.get(obj.id) };
+          }
+          return obj;
+        });
+        return {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          objects: [...updatedOriginals, ...generatedObjects],
+        };
+      });
     },
-    [selectedIds, project.objects, recordHistorySnapshot]
+    [selectedIds, project.objects, project.syncLinkedDuplicates, recordHistorySnapshot]
   );
+
+  // Toggle & Set Linked Duplicates Sync
+  const syncLinkedDuplicates = project.syncLinkedDuplicates !== false;
+
+  const toggleSyncLinkedDuplicates = useCallback(() => {
+    setProject(prev => ({
+      ...prev,
+      syncLinkedDuplicates: !(prev.syncLinkedDuplicates !== false),
+    }));
+  }, []);
+
+  const setSyncLinkedDuplicates = useCallback((enabled: boolean) => {
+    setProject(prev => ({
+      ...prev,
+      syncLinkedDuplicates: enabled,
+    }));
+  }, []);
+
+  // Manual Link / Unlink Selected objects
+  const linkSelectedAsDuplicates = useCallback(() => {
+    if (selectedIds.length === 0) return;
+    recordHistorySnapshot();
+    const newLinkGroupId = 'link-' + Date.now();
+    const updates = selectedIds.map((id, index) => {
+      const obj = project.objects.find(o => o.id === id);
+      return {
+        id,
+        changes: {
+          linkGroupId: newLinkGroupId,
+          linkSlotId: obj?.linkSlotId || `slot-${index + 1}`,
+        },
+      };
+    });
+    updateMultipleObjects(updates, false);
+  }, [selectedIds, project.objects, recordHistorySnapshot, updateMultipleObjects]);
+
+  const unlinkSelectedDuplicates = useCallback(() => {
+    if (selectedIds.length === 0) return;
+    recordHistorySnapshot();
+    const updates = selectedIds.map(id => ({
+      id,
+      changes: {
+        linkGroupId: undefined,
+        linkSlotId: undefined,
+      },
+    }));
+    updateMultipleObjects(updates, false);
+  }, [selectedIds, recordHistorySnapshot, updateMultipleObjects]);
+
+  const groupSpecifiedObjects = useCallback((ids: string[]) => {
+    if (ids.length < 2) return;
+    recordHistorySnapshot();
+    const groupId = 'group-' + Date.now();
+    const updates = ids.map(id => ({ id, changes: { groupId } }));
+    updateMultipleObjects(updates, false);
+  }, [recordHistorySnapshot, updateMultipleObjects]);
+
+  const [masterCardId, setMasterCardId] = useState<string | null>(null);
+
+  const linkToMaster = useCallback((targetIds: string[], masterId: string) => {
+    recordHistorySnapshot();
+    const masterObj = project.objects.find(o => o.id === masterId);
+    if (!masterObj) return;
+
+    const masterObjs = masterObj.groupId
+      ? project.objects.filter(o => o.groupId === masterObj.groupId)
+      : [masterObj];
+
+    const linkGroupId = masterObj.linkGroupId || ('link-master-' + Date.now());
+    const updates: { id: string; changes: Partial<VectorObject> }[] = [];
+
+    masterObjs.forEach((m, idx) => {
+      updates.push({
+        id: m.id,
+        changes: {
+          linkGroupId,
+          linkSlotId: m.linkSlotId || `slot-${idx + 1}`,
+        },
+      });
+    });
+
+    targetIds.forEach((tId, idx) => {
+      const matchingMasterSlot = masterObjs[idx % masterObjs.length];
+      updates.push({
+        id: tId,
+        changes: {
+          linkGroupId,
+          linkSlotId: matchingMasterSlot.linkSlotId || `slot-${(idx % masterObjs.length) + 1}`,
+        },
+      });
+    });
+
+    updateMultipleObjects(updates, false);
+    setMasterCardId(null);
+  }, [project.objects, recordHistorySnapshot, updateMultipleObjects]);
 
   // Clipboard operations
   const copy = useCallback(() => {
@@ -1414,7 +1818,22 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         distributeSelected,
         groupSelected,
         ungroupSelected,
+        groupSpecifiedObjects,
         repeatGridSelected,
+        syncLinkedDuplicates,
+        toggleSyncLinkedDuplicates,
+        setSyncLinkedDuplicates,
+        linkSelectedAsDuplicates,
+        unlinkSelectedDuplicates,
+        masterCardId,
+        setMasterCardId,
+        linkToMaster,
+        savedTemplates,
+        saveCurrentAsTemplate,
+        deleteUserTemplate,
+        exportTemplateJsonFile,
+        importTemplateJsonFile,
+        importTemplateJsonString,
         trackpadTarget,
         setTrackpadTarget,
         isTrackpadOpen,
